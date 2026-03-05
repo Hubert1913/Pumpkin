@@ -8,6 +8,10 @@ pub(crate) struct NogoodInfo {
     pub(crate) is_learned: bool,
     /// The LBD score of the nogood; this is an indication of how "good" the nogood is.
     pub(crate) lbd: u32,
+    pub(crate) size: u32,
+    pub(crate) num_variables: u32,
+    pub(crate) decision_levels_span: u32,
+    pub(crate) search_space_size: f64,
     /// Whether the nogood has been marked as deleted; this means that it can be replaced by
     /// another nogood in the future.
     pub(crate) is_deleted: bool,
@@ -25,20 +29,39 @@ pub(crate) struct NogoodInfo {
 }
 
 impl NogoodInfo {
-    pub(crate) fn new_learned_nogood_info(lbd: u32) -> Self {
+    pub(crate) fn new_learned_nogood_info(
+        lbd: u32,
+        size: u32,
+        num_variables: u32,
+        decision_levels_span: u32,
+        search_space_size: f64,
+    ) -> Self {
         NogoodInfo {
             is_learned: true,
             lbd,
+            size,
+            num_variables,
+            decision_levels_span,
+            search_space_size,
             is_deleted: false,
             block_bumps: false,
             activity: 0.0,
         }
     }
 
-    pub(crate) fn new_permanent_nogood_info() -> Self {
+    pub(crate) fn new_permanent_nogood_info(// lbd: u32,
+        // size: u32,
+        // num_variables: u32,
+        // decision_levels_span: u32,
+        // search_space_size: f64,
+    ) -> Self {
         NogoodInfo {
             is_learned: false,
             lbd: 0,
+            size: 0,
+            num_variables: 0,
+            decision_levels_span: 0,
+            search_space_size: 1.0,
             is_deleted: false,
             block_bumps: false,
             activity: 0.0,
