@@ -21,6 +21,7 @@ use crate::engine::reason::Reason;
 use crate::engine::reason::ReasonStore;
 use crate::predicate;
 use crate::proof::InferenceCode;
+use crate::proof::InferenceLabel;
 use crate::propagation::EnqueueDecision;
 use crate::propagation::ExplanationContext;
 use crate::propagation::NotificationContext;
@@ -39,6 +40,9 @@ use crate::pumpkin_assert_moderate;
 use crate::pumpkin_assert_simple;
 use crate::state::Conflict;
 use crate::state::PropagatorHandle;
+use std::fs::File;
+use std::io::{BufWriter, Write};
+use std::sync::{Arc, Mutex};
 
 /// A propagator which propagates nogoods (i.e. a list of [`Predicate`]s which cannot all be true
 /// at the same time).
@@ -79,6 +83,12 @@ pub struct NogoodPropagator {
     /// current subtree. To test for that, we compare this handle with the propagator ID of a
     /// proapgated literal to see if this propagator propagated a predicate.
     handle: PropagatorHandle<NogoodPropagator>,
+    /// Maintains a mapping which nogood caused the corresponding propagation
+    propagation_to_nogood_map: Vec<u32>,
+    /// Counter of propagations done by nogoods
+    propagations_count: u32,
+    /// Writer for writing nogood statistics to file
+    writer: Arc<Mutex<BufWriter<File>>>,
 }
 
 /// [`PropagatorConstructor`] for constructing a new instance of the [`NogoodPropagator`] with the
@@ -103,6 +113,8 @@ impl PropagatorConstructor for NogoodPropagatorConstructor {
 
     fn create(self, mut context: PropagatorConstructorContext) -> Self::PropagatorImpl {
         context.will_not_register_any_events();
+        let output_file =
+            File::create("experiments/out7_proof.txt").expect("File creation should succeed");
 
         NogoodPropagator {
             handle: PropagatorHandle::new(context.propagator_id),
@@ -117,6 +129,9 @@ impl PropagatorConstructor for NogoodPropagatorConstructor {
             lbd_helper: Default::default(),
             bumped_nogoods: Default::default(),
             temp_nogood_reason: Default::default(),
+            propagation_to_nogood_map: Default::default(),
+            propagations_count: 0,
+            writer: Arc::new(Mutex::new(BufWriter::new(output_file))),
         }
     }
 }
@@ -229,8 +244,10 @@ impl Propagator for NogoodPropagator {
                 .resize(context.num_predicate_ids() + 1, Vec::default());
         }
 
+        let predicate_ids = std::mem::take(&mut self.updated_predicate_ids);
+
         // TODO: should drop all elements afterwards
-        for predicate_id in self.updated_predicate_ids.drain(..) {
+        for predicate_id in predicate_ids {
             pumpkin_assert_moderate!(
                 {
                     let predicate = context.get_predicate(predicate_id);
@@ -315,15 +332,33 @@ impl Propagator for NogoodPropagator {
                 // There are two scenarios:
                 // nogood[0] is unassigned -> propagate the predicate to false
                 // nogood[0] is assigned true -> conflict.
-                let reason = Reason::DynamicLazy(watcher.nogood_id.id as u64);
+                // let reason = Reason::DynamicLazy(watcher.nogood_id.id as u64);
+                let reason = Reason::DynamicLazy(self.propagations_count as u64);
 
                 let predicate = !context.get_predicate(nogood_predicates[0]);
-                let result = context.post(
-                    predicate,
-                    reason,
-                    &self.inference_codes
-                        [self.nogood_predicates.get_nogood_index(&watcher.nogood_id)],
-                );
+
+                self.print_nogood_statistics(watcher.nogood_id);
+                self.propagation_to_nogood_map.push(watcher.nogood_id.id);
+                self.propagations_count += 1;
+                // println!("{}", self.propagations_count);
+                // println!("{:?}", self.propagation_to_nogood_map);
+
+                let old_inference_code = &self.inference_codes
+                    [self.nogood_predicates.get_nogood_index(&watcher.nogood_id)];
+                let old_label = old_inference_code.label();
+                let old_tag = old_inference_code.tag();
+                let propagation_id = self.propagations_count - 1;
+                let label = DynamicLabel {
+                    label: Arc::from(format!("{old_label}-{propagation_id}")),
+                };
+
+                // let result = context.post(
+                //     predicate,
+                //     reason,
+                //     &self.inference_codes
+                //         [self.nogood_predicates.get_nogood_index(&watcher.nogood_id)],
+                // );
+                let result = context.post(predicate, reason, &InferenceCode::new(old_tag, label));
                 // If the propagation lead to a conflict.
                 if let Err(e) = result {
                     return Err(e.into());
@@ -359,202 +394,8 @@ impl Propagator for NogoodPropagator {
     /// In case of the noogood propagator, lazy explanations internally also update information
     /// about the LBD and activity of the nogood, which is used when cleaning up nogoods.
     fn lazy_explanation(&mut self, code: u64, mut context: ExplanationContext) -> &[Predicate] {
-        let id = NogoodId { id: code as u32 };
-
-        let nogood_info = &self.nogood_info[self.nogood_predicates.get_nogood_index(&id)];
-
-        if nogood_info.is_learned {
-            let mut sums_ints: Vec<u32> = vec![0; 4];
-            let mut sums_floats: Vec<f64> = vec![0.0; 2];
-
-            let mut counts: Vec<u32> = vec![0; 12];
-
-            let mut count: f64 = 0.0;
-
-            let nogoods_length = self.learned_nogood_ids.high_lbd.len()
-                + self.learned_nogood_ids.mid_lbd.len()
-                + self.learned_nogood_ids.low_lbd.len();
-
-            let all_nogood_indices: Vec<NogoodIndex> = self
-                .learned_nogood_ids
-                .high_lbd
-                .iter()
-                .chain(self.learned_nogood_ids.mid_lbd.iter())
-                .chain(self.learned_nogood_ids.low_lbd.iter())
-                .map(|ngid| self.nogood_predicates.get_nogood_index(ngid))
-                .collect();
-
-            let mut by_size = all_nogood_indices.clone();
-            by_size.sort_by_key(|&i| self.nogood_info[i].size);
-            let first_size =
-                by_size.partition_point(|&i| self.nogood_info[i].size < nogood_info.size);
-            let last_size =
-                by_size.partition_point(|&i| self.nogood_info[i].size <= nogood_info.size) - 1;
-            let size_index = (first_size + last_size) as u32 / 2;
-
-            let mut by_activity = all_nogood_indices.clone();
-            by_activity.sort_by(|&i, &j| {
-                self.nogood_info[i]
-                    .activity
-                    .total_cmp(&self.nogood_info[j].activity)
-            });
-            let first_activity = by_activity
-                .partition_point(|&i| self.nogood_info[i].activity < nogood_info.activity);
-            let last_activity = by_activity
-                .partition_point(|&i| self.nogood_info[i].activity <= nogood_info.activity)
-                - 1;
-            let activity_index = (first_activity + last_activity) as u32 / 2;
-
-            let mut by_lbd = all_nogood_indices.clone();
-            by_lbd.sort_by_key(|&i| self.nogood_info[i].lbd);
-            let first_lbd = by_lbd.partition_point(|&i| self.nogood_info[i].lbd < nogood_info.lbd);
-            let last_lbd =
-                by_lbd.partition_point(|&i| self.nogood_info[i].lbd <= nogood_info.lbd) - 1;
-            let lbd_index = (first_lbd + last_lbd) as u32 / 2;
-
-            let mut by_num_variables = all_nogood_indices.clone();
-            by_num_variables.sort_by_key(|&i| self.nogood_info[i].num_variables);
-            let first_num_variables = by_num_variables.partition_point(|&i| {
-                self.nogood_info[i].num_variables < nogood_info.num_variables
-            });
-            let last_num_variables = by_num_variables.partition_point(|&i| {
-                self.nogood_info[i].num_variables <= nogood_info.num_variables
-            }) - 1;
-            let num_variables_index = (first_num_variables + last_num_variables) as u32 / 2;
-
-            let mut by_decision_levels_span = all_nogood_indices.clone();
-            by_decision_levels_span.sort_by_key(|&i| self.nogood_info[i].decision_levels_span);
-            let first_decision_levels_span = by_decision_levels_span.partition_point(|&i| {
-                self.nogood_info[i].decision_levels_span < nogood_info.decision_levels_span
-            });
-            let last_decision_levels_span = by_decision_levels_span.partition_point(|&i| {
-                self.nogood_info[i].decision_levels_span <= nogood_info.decision_levels_span
-            }) - 1;
-            let decision_levels_span_index =
-                (first_decision_levels_span + last_decision_levels_span) as u32 / 2;
-
-            let mut by_search_space_size = all_nogood_indices.clone();
-            by_search_space_size.sort_by(|&i, &j| {
-                self.nogood_info[i]
-                    .search_space_size
-                    .total_cmp(&self.nogood_info[j].search_space_size)
-            });
-            let first_search_space_size = by_search_space_size.partition_point(|&i| {
-                self.nogood_info[i].search_space_size < nogood_info.search_space_size
-            });
-            let last_search_space_size = by_search_space_size.partition_point(|&i| {
-                self.nogood_info[i].search_space_size <= nogood_info.search_space_size
-            }) - 1;
-            let search_space_size_index =
-                (first_search_space_size + last_search_space_size) as u32 / 2;
-
-            // for nogood in self
-            //     .learned_nogood_ids
-            //     .high_lbd
-            //     .iter()
-            //     .chain(self.learned_nogood_ids.mid_lbd.iter())
-            //     .chain(self.learned_nogood_ids.low_lbd.iter())
-            // {
-            //     let i = self.nogood_predicates.get_nogood_index(nogood);
-
-            //     count += 1.0;
-            //     sums_ints[0] += self.nogood_info[i].size;
-            //     sums_ints[1] += self.nogood_info[i].lbd;
-            //     sums_ints[2] += self.nogood_info[i].num_variables;
-            //     sums_ints[3] += self.nogood_info[i].decision_levels_span;
-
-            //     sums_floats[0] += self.nogood_info[i].activity as f64;
-            //     sums_floats[1] += self.nogood_info[i].search_space_size;
-
-            //     //     if id != *nogood {
-            //     //         if self.nogood_info[i].size < nogood_info.size {
-            //     //             counts[0] += 1;
-            //     //         } else {
-            //     //             counts[1] += 1;
-            //     //         }
-            //     //         if self.nogood_info[i].activity <= nogood_info.activity {
-            //     //             counts[2] += 1;
-            //     //         } else {
-            //     //             counts[3] += 1;
-            //     //         }
-            //     //         if self.nogood_info[i].lbd < nogood_info.lbd {
-            //     //             counts[4] += 1;
-            //     //         } else {
-            //     //             counts[5] += 1;
-            //     //         }
-            //     //         if self.nogood_info[i].num_variables < nogood_info.num_variables {
-            //     //             counts[6] += 1;
-            //     //         } else {
-            //     //             counts[7] += 1;
-            //     //         }
-            //     //         if self.nogood_info[i].decision_levels_span < nogood_info.decision_levels_span {
-            //     //             counts[8] += 1;
-            //     //         } else {
-            //     //             counts[9] += 1;
-            //     //         }
-            //     //         if self.nogood_info[i].search_space_size <= nogood_info.search_space_size {
-            //     //             counts[10] += 1;
-            //     //         } else {
-            //     //             counts[11] += 1;
-            //     //         }
-            //     //     }
-            // }
-
-            // let averages = vec![
-            //     sums_ints[0] as f64 / count,
-            //     sums_floats[0] / count,
-            //     sums_ints[1] as f64 / count,
-            //     sums_ints[2] as f64 / count,
-            //     sums_ints[3] as f64 / count,
-            //     sums_floats[1] / count,
-            // ];
-
-            // println!(
-            //     "NogoodProp {} {} {} {} {} {} {} {} {} {} {} {} {}",
-            //     code,
-            //     nogood_info.size as f64 / averages[0],
-            //     counts[0] < counts[1],
-            //     if averages[1] == 0.0 {
-            //         1.0
-            //     } else {
-            //         nogood_info.activity as f64 / averages[1]
-            //     },
-            //     counts[2] > counts[3],
-            //     if averages[2] == 0.0 {
-            //         1.0
-            //     } else {
-            //         nogood_info.lbd as f64 / averages[2]
-            //     },
-            //     counts[4] < counts[5],
-            //     nogood_info.num_variables as f64 / averages[3],
-            //     counts[6] < counts[7],
-            //     if averages[4] == 0.0 {
-            //         1.0
-            //     } else {
-            //         nogood_info.decision_levels_span as f64 / averages[4]
-            //     },
-            //     counts[8] < counts[9],
-            //     nogood_info.search_space_size / averages[5],
-            //     counts[10] > counts[11],
-            // );
-
-            println!(
-                "NogoodProp {} {} {} {} {} {} {} {} {} {} {} {} {}",
-                code,
-                size_index as f64 / nogoods_length as f64,
-                first_size <= nogoods_length / 2,
-                activity_index as f64 / nogoods_length as f64,
-                last_activity >= nogoods_length / 2,
-                lbd_index as f64 / nogoods_length as f64,
-                first_lbd <= nogoods_length / 2,
-                num_variables_index as f64 / nogoods_length as f64,
-                first_num_variables <= nogoods_length / 2,
-                decision_levels_span_index as f64 / nogoods_length as f64,
-                first_decision_levels_span <= nogoods_length / 2,
-                search_space_size_index as f64 / nogoods_length as f64,
-                last_search_space_size >= nogoods_length / 2,
-            );
-        }
+        let nogood_code = self.propagation_to_nogood_map[code as usize];
+        let id = NogoodId { id: nogood_code };
 
         self.temp_nogood_reason = self.nogood_predicates[id][1..]
             .iter()
@@ -562,6 +403,11 @@ impl Propagator for NogoodPropagator {
             .collect::<Vec<_>>();
 
         let info_id = self.nogood_predicates.get_nogood_index(&id);
+
+        if self.nogood_info[info_id].is_learned {
+            let mut writer = self.writer.lock().unwrap();
+            writeln!(writer, "PropInConfl {}", code).unwrap();
+        }
 
         // Update the LBD and activity of the nogood, if appropriate.
         //
@@ -701,7 +547,15 @@ impl NogoodPropagator {
             decision_levels_span,
             search_space_size,
         ));
-        let _ = self.inference_codes.push(inference_code);
+        // let _ = self.inference_codes.push(inference_code);
+        let old_label = inference_code.label();
+        let nogood_id_id = nogood_id.id;
+        let label = DynamicLabel {
+            label: Arc::from(format!("{old_label}{nogood_id_id}")),
+        };
+        let _ = self
+            .inference_codes
+            .push(InferenceCode::new(inference_code.tag(), label));
 
         let watcher = Watcher {
             nogood_id,
@@ -724,7 +578,9 @@ impl NogoodPropagator {
 
         // Then we propagate the asserting predicate and as the reason we give the index to the
         // asserting nogood such that we can re-create the reason when asked for it
-        let reason = Reason::DynamicLazy(nogood_id.id as u64);
+        // let reason = Reason::DynamicLazy(nogood_id.id as u64);
+        let reason = Reason::DynamicLazy(self.propagations_count as u64);
+
         let inference_code =
             &self.inference_codes[self.nogood_predicates.get_nogood_index(&nogood_id)];
 
@@ -743,6 +599,10 @@ impl NogoodPropagator {
         } else {
             self.learned_nogood_ids.mid_lbd.push(nogood_id);
         }
+
+        // self.print_nogood_statistics(nogood_id);
+        self.propagation_to_nogood_map.push(nogood_id.id);
+        self.propagations_count += 1;
     }
 
     /// Adds a nogood to the propagator as a permanent nogood and sets the internal state to be
@@ -1520,6 +1380,257 @@ impl NogoodPropagator {
             );
         }
         true
+    }
+}
+
+impl NogoodPropagator {
+    fn print_nogood_statistics(&self, id: NogoodId) {
+        let nogood_info = &self.nogood_info[self.nogood_predicates.get_nogood_index(&id)];
+
+        if nogood_info.is_learned {
+            // let mut sums_ints: Vec<u32> = vec![0; 4];
+            // let mut sums_floats: Vec<f64> = vec![0.0; 2];
+
+            let mut counts: Vec<u32> = vec![0; 12];
+
+            // let mut count: f64 = 0.0;
+
+            let nogoods_length = self.learned_nogood_ids.high_lbd.len()
+                + self.learned_nogood_ids.mid_lbd.len()
+                + self.learned_nogood_ids.low_lbd.len();
+
+            // let all_nogood_indices: Vec<NogoodIndex> = self
+            //     .learned_nogood_ids
+            //     .high_lbd
+            //     .iter()
+            //     .chain(self.learned_nogood_ids.mid_lbd.iter())
+            //     .chain(self.learned_nogood_ids.low_lbd.iter())
+            //     .map(|ngid| self.nogood_predicates.get_nogood_index(ngid))
+            //     .collect();
+
+            // let mut by_size = all_nogood_indices.clone();
+            // by_size.sort_by_key(|&i| self.nogood_info[i].size);
+            // let first_size =
+            //     by_size.partition_point(|&i| self.nogood_info[i].size < nogood_info.size);
+            // let last_size =
+            //     by_size.partition_point(|&i| self.nogood_info[i].size <= nogood_info.size) - 1;
+            // let size_index = (first_size + last_size) as u32 / 2;
+
+            // let mut by_activity = all_nogood_indices.clone();
+            // by_activity.sort_by(|&i, &j| {
+            //     self.nogood_info[i]
+            //         .activity
+            //         .total_cmp(&self.nogood_info[j].activity)
+            // });
+            // let first_activity = by_activity
+            //     .partition_point(|&i| self.nogood_info[i].activity < nogood_info.activity);
+            // let last_activity = by_activity
+            //     .partition_point(|&i| self.nogood_info[i].activity <= nogood_info.activity)
+            //     - 1;
+            // let activity_index = (first_activity + last_activity) as u32 / 2;
+
+            // let mut by_lbd = all_nogood_indices.clone();
+            // by_lbd.sort_by_key(|&i| self.nogood_info[i].lbd);
+            // let first_lbd = by_lbd.partition_point(|&i| self.nogood_info[i].lbd < nogood_info.lbd);
+            // let last_lbd =
+            //     by_lbd.partition_point(|&i| self.nogood_info[i].lbd <= nogood_info.lbd) - 1;
+            // let lbd_index = (first_lbd + last_lbd) as u32 / 2;
+
+            // let mut by_num_variables = all_nogood_indices.clone();
+            // by_num_variables.sort_by_key(|&i| self.nogood_info[i].num_variables);
+            // let first_num_variables = by_num_variables.partition_point(|&i| {
+            //     self.nogood_info[i].num_variables < nogood_info.num_variables
+            // });
+            // let last_num_variables = by_num_variables.partition_point(|&i| {
+            //     self.nogood_info[i].num_variables <= nogood_info.num_variables
+            // }) - 1;
+            // let num_variables_index = (first_num_variables + last_num_variables) as u32 / 2;
+
+            // let mut by_decision_levels_span = all_nogood_indices.clone();
+            // by_decision_levels_span.sort_by_key(|&i| self.nogood_info[i].decision_levels_span);
+            // let first_decision_levels_span = by_decision_levels_span.partition_point(|&i| {
+            //     self.nogood_info[i].decision_levels_span < nogood_info.decision_levels_span
+            // });
+            // let last_decision_levels_span = by_decision_levels_span.partition_point(|&i| {
+            //     self.nogood_info[i].decision_levels_span <= nogood_info.decision_levels_span
+            // }) - 1;
+            // let decision_levels_span_index =
+            //     (first_decision_levels_span + last_decision_levels_span) as u32 / 2;
+
+            // let mut by_search_space_size = all_nogood_indices.clone();
+            // by_search_space_size.sort_by(|&i, &j| {
+            //     self.nogood_info[i]
+            //         .search_space_size
+            //         .total_cmp(&self.nogood_info[j].search_space_size)
+            // });
+            // let first_search_space_size = by_search_space_size.partition_point(|&i| {
+            //     self.nogood_info[i].search_space_size < nogood_info.search_space_size
+            // });
+            // let last_search_space_size = by_search_space_size.partition_point(|&i| {
+            //     self.nogood_info[i].search_space_size <= nogood_info.search_space_size
+            // }) - 1;
+            // let search_space_size_index =
+            //     (first_search_space_size + last_search_space_size) as u32 / 2;
+
+            for nogood in self
+                .learned_nogood_ids
+                .high_lbd
+                .iter()
+                .chain(self.learned_nogood_ids.mid_lbd.iter())
+                .chain(self.learned_nogood_ids.low_lbd.iter())
+            {
+                let i = self.nogood_predicates.get_nogood_index(nogood);
+
+                // count += 1.0;
+                // sums_ints[0] += self.nogood_info[i].size;
+                // sums_ints[1] += self.nogood_info[i].lbd;
+                // sums_ints[2] += self.nogood_info[i].num_variables;
+                // sums_ints[3] += self.nogood_info[i].decision_levels_span;
+
+                // sums_floats[0] += self.nogood_info[i].activity as f64;
+                // sums_floats[1] += self.nogood_info[i].search_space_size;
+
+                if id != *nogood {
+                    if self.nogood_info[i].size < nogood_info.size {
+                        counts[0] += 1;
+                    } else if self.nogood_info[i].size == nogood_info.size {
+                        counts[1] += 1;
+                    }
+                    if self.nogood_info[i].activity < nogood_info.activity {
+                        counts[2] += 1;
+                    } else if self.nogood_info[i].activity == nogood_info.activity {
+                        counts[3] += 1;
+                    }
+                    if self.nogood_info[i].lbd < nogood_info.lbd {
+                        counts[4] += 1;
+                    } else if self.nogood_info[i].lbd == nogood_info.lbd {
+                        counts[5] += 1;
+                    }
+                    if self.nogood_info[i].num_variables < nogood_info.num_variables {
+                        counts[6] += 1;
+                    } else if self.nogood_info[i].num_variables == nogood_info.num_variables {
+                        counts[7] += 1;
+                    }
+                    if self.nogood_info[i].decision_levels_span < nogood_info.decision_levels_span {
+                        counts[8] += 1;
+                    } else if self.nogood_info[i].decision_levels_span
+                        == nogood_info.decision_levels_span
+                    {
+                        counts[9] += 1;
+                    }
+                    if self.nogood_info[i].search_space_size < nogood_info.search_space_size {
+                        counts[10] += 1;
+                    } else if self.nogood_info[i].search_space_size == nogood_info.search_space_size
+                    {
+                        counts[11] += 1;
+                    }
+                }
+            }
+
+            // let averages = vec![
+            //     sums_ints[0] as f64 / count,
+            //     sums_floats[0] / count,
+            //     sums_ints[1] as f64 / count,
+            //     sums_ints[2] as f64 / count,
+            //     sums_ints[3] as f64 / count,
+            //     sums_floats[1] / count,
+            // ];
+
+            // println!(
+            //     "NogoodProp {} {} {} {} {} {} {} {} {} {} {} {} {}",
+            //     code,
+            //     nogood_info.size as f64 / averages[0],
+            //     counts[0] < counts[1],
+            //     if averages[1] == 0.0 {
+            //         1.0
+            //     } else {
+            //         nogood_info.activity as f64 / averages[1]
+            //     },
+            //     counts[2] > counts[3],
+            //     if averages[2] == 0.0 {
+            //         1.0
+            //     } else {
+            //         nogood_info.lbd as f64 / averages[2]
+            //     },
+            //     counts[4] < counts[5],
+            //     nogood_info.num_variables as f64 / averages[3],
+            //     counts[6] < counts[7],
+            //     if averages[4] == 0.0 {
+            //         1.0
+            //     } else {
+            //         nogood_info.decision_levels_span as f64 / averages[4]
+            //     },
+            //     counts[8] < counts[9],
+            //     nogood_info.search_space_size / averages[5],
+            //     counts[10] > counts[11],
+            // );
+
+            // println!(
+            //     "NogoodProp {} {} {} {} {} {} {} {} {} {} {} {} {}",
+            //     id.id,
+            //     size_index as f64 / nogoods_length as f64,
+            //     first_size <= nogoods_length / 2,
+            //     activity_index as f64 / nogoods_length as f64,
+            //     last_activity >= nogoods_length / 2,
+            //     lbd_index as f64 / nogoods_length as f64,
+            //     first_lbd <= nogoods_length / 2,
+            //     num_variables_index as f64 / nogoods_length as f64,
+            //     first_num_variables <= nogoods_length / 2,
+            //     decision_levels_span_index as f64 / nogoods_length as f64,
+            //     first_decision_levels_span <= nogoods_length / 2,
+            //     search_space_size_index as f64 / nogoods_length as f64,
+            //     last_search_space_size >= nogoods_length / 2,
+            // );
+
+            let mut writer = self.writer.lock().unwrap();
+
+            writeln!(
+                writer,
+                "NogoodProp {} {} {} {} {} {} {} {} {} {} {} {} {} {}",
+                self.propagations_count,
+                id.id,
+                (counts[0] + counts[1] / 2) as f64 / nogoods_length as f64,
+                nogood_info.size,
+                (counts[2] + counts[3] / 2) as f64 / nogoods_length as f64,
+                nogood_info.activity,
+                (counts[4] + counts[5] / 2) as f64 / nogoods_length as f64,
+                nogood_info.lbd,
+                (counts[6] + counts[7] / 2) as f64 / nogoods_length as f64,
+                nogood_info.num_variables,
+                (counts[8] + counts[9] / 2) as f64 / nogoods_length as f64,
+                nogood_info.decision_levels_span,
+                (counts[10] + counts[11] / 2) as f64 / nogoods_length as f64,
+                nogood_info.search_space_size,
+            )
+            .unwrap();
+
+            // println!(
+            //     "NogoodProp {} {} {} {} {} {} {} {} {} {} {} {} {}",
+            //     id.id,
+            //     (counts[0] + counts[1] / 2) as f64 / nogoods_length as f64,
+            //     nogood_info.size,
+            //     (counts[2] + counts[3] / 2) as f64 / nogoods_length as f64,
+            //     nogood_info.activity,
+            //     (counts[4] + counts[5] / 2) as f64 / nogoods_length as f64,
+            //     nogood_info.lbd,
+            //     (counts[6] + counts[7] / 2) as f64 / nogoods_length as f64,
+            //     nogood_info.num_variables,
+            //     (counts[8] + counts[9] / 2) as f64 / nogoods_length as f64,
+            //     nogood_info.decision_levels_span,
+            //     (counts[10] + counts[11] / 2) as f64 / nogoods_length as f64,
+            //     nogood_info.search_space_size,
+            // );
+        }
+    }
+}
+
+pub(crate) struct DynamicLabel {
+    label: Arc<str>,
+}
+
+impl InferenceLabel for DynamicLabel {
+    fn to_str(&self) -> Arc<str> {
+        Arc::clone(&self.label)
     }
 }
 
