@@ -401,6 +401,10 @@ struct Args {
     /// The amount of memory (in MB) that is preallocated for storing nogoods.
     #[arg(long = "memory-preallocated", default_value_t = 50)]
     memory_preallocated: usize,
+
+    /// The path to be used as file to save the nogood statistics
+    #[arg(long, verbatim_doc_comment)]
+    stats_path: String,
 }
 
 fn configure_logging(
@@ -556,6 +560,9 @@ fn run() -> PumpkinResult<()> {
         geometric_coef: args.restart_geometric_coef,
         no_restarts: args.no_restarts,
     };
+
+    let stats_path: &'static str = Box::leak(args.stats_path.into_boxed_str());
+
     let learning_options = LearningOptions {
         max_activity: 1e20,
         activity_decay_factor: 0.99,
@@ -565,6 +572,7 @@ fn run() -> PumpkinResult<()> {
         lbd_threshold_low: args.learning_low_lbd_threshold,
         lbd_threshold_high: args.learning_high_lbd_threshold,
         activity_bump_increment: 1.0,
+        stats_path: stats_path,
     };
 
     let should_minimise_nogoods = if args.proof_type == ProofType::Full {

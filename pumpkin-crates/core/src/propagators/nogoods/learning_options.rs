@@ -36,6 +36,8 @@ pub struct LearningOptions {
     pub lbd_threshold_low: u32,
     /// Specifies by how much the activity is increased when a nogood is bumped.
     pub activity_bump_increment: f32,
+    /// The path for nogood statistics
+    pub stats_path: &'static str,
 }
 impl Default for LearningOptions {
     fn default() -> Self {
@@ -48,6 +50,7 @@ impl Default for LearningOptions {
             lbd_threshold_high: 7,
             lbd_threshold_low: 3,
             activity_bump_increment: 1.0,
+            stats_path: "",
         }
     }
 }
