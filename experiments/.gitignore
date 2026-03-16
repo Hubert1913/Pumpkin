@@ -2,3 +2,4 @@ venv
 *.txt
 *.png
 *.drcp
+*.csv

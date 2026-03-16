@@ -131,6 +131,12 @@ def analyze_nogood_events(file_path, full_proof_path, processed_proof_path, ver_
 
     print("Finished reading. Processing and plotting...")
 
+    rows_for_csv = []
+    bins = np.linspace(0, 1, 51)
+    bin_centers = (bins[:-1] + bins[1:]) / 2
+
+    raw_rows_for_csv = []
+
     average_times_used_in_proof = sum(used_count_in_proof.values()) / len(used_count_in_proof)
     average_inferences_from_nogood_in_proof = sum(nogood_inferences_in_proof.values()) / len(nogood_inferences_in_proof)
 
@@ -171,6 +177,50 @@ def analyze_nogood_events(file_path, full_proof_path, processed_proof_path, ver_
     df_abs["useful_proof_weights"] = useful_proof_weights
 
     # --- 1. Plots for unweighted data ---
+    for col in metrics_names:
+        density, _ = np.histogram(
+            df_metrics[col],
+            bins=bins,
+            density=True
+        )
+
+        for i, d in enumerate(density):
+            rows_for_csv.append({
+                "type": "unweighted",
+                "metric": col,
+                "bin": i,
+                "bin_center": bin_centers[i],
+                "density": d
+            })
+
+    for col in metrics_names:
+        if col == "search_space_size":
+            density, _ = np.histogram(
+                df_abs[col],
+                bins=bins,
+                density=True
+            )
+
+            for i, d in enumerate(density):
+                rows_for_csv.append({
+                    "type": "unweighted",
+                    "metric": col,
+                    "bin": i,
+                    "bin_center": bin_centers[i],
+                    "density": d
+                })
+        elif col == "activity":
+            pass
+        else:
+            total_weight_sum = df_abs[col].size
+            for val in df_abs[col].unique():
+                raw_rows_for_csv.append({
+                    "type": "unweighted",
+                    "metric": col,
+                    "value": val,
+                    "density": df_abs.loc[df_abs[col] == val, col].size / total_weight_sum
+                })
+
     plt.figure(figsize=(15, 10))
     for i, col in enumerate(metrics_names, 1):
         plt.subplot(2, 3, i)
@@ -213,6 +263,22 @@ def analyze_nogood_events(file_path, full_proof_path, processed_proof_path, ver_
     plt.savefig(f'unweighted_raw_{ver_num}.png')
 
     # --- 2. Plots for weighted according to conflict analysis usage ---
+    for col in metrics_names:
+        density, _ = np.histogram(
+            df_metrics[col],
+            bins=bins,
+            density=True,
+            weights=df_metrics["conflict_weights"]
+        )
+
+        for i, d in enumerate(density):
+            rows_for_csv.append({
+                "type": "conflict",
+                "metric": col,
+                "bin": i,
+                "bin_center": bin_centers[i],
+                "density": d
+            })
     plt.figure(figsize=(15, 10))
     for i, col in enumerate(metrics_names, 1):
         plt.subplot(2, 3, i)
@@ -255,6 +321,39 @@ def analyze_nogood_events(file_path, full_proof_path, processed_proof_path, ver_
     plt.savefig(f'confl_raw_{ver_num}.png')
 
     # --- 3. Plots for weighted according to proof usage ---
+    for col in metrics_names:
+        density, _ = np.histogram(
+            df_metrics[col],
+            bins=bins,
+            density=True,
+            weights=df_metrics["proof_weights"]
+        )
+
+        for i, d in enumerate(density):
+            rows_for_csv.append({
+                "type": "proof",
+                "metric": col,
+                "bin": i,
+                "bin_center": bin_centers[i],
+                "density": d
+            })
+    for col in metrics_names:
+        density, _ = np.histogram(
+            df_metrics[col],
+            bins=bins,
+            density=True,
+            weights=df_metrics["useful_proof_weights"]
+        )
+
+        for i, d in enumerate(density):
+            rows_for_csv.append({
+                "type": "useful_proof",
+                "metric": col,
+                "bin": i,
+                "bin_center": bin_centers[i],
+                "density": d
+            })
+
     plt.figure(figsize=(15, 10))
     for i, col in enumerate(metrics_names, 1):
         plt.subplot(2, 3, i)
@@ -324,6 +423,12 @@ def analyze_nogood_events(file_path, full_proof_path, processed_proof_path, ver_
     plt.tight_layout()
     plt.savefig(f'proof_raw_{ver_num}.png')
 
+    df_csv = pd.DataFrame(rows_for_csv)
+    df_csv.to_csv(f"densities_{ver_num}.csv", index=False)
+
+    df_csv_raw = pd.DataFrame(raw_rows_for_csv)
+    df_csv_raw.to_csv(f"densities_raw_{ver_num}.csv", index=False)
+
     # --- 2. Boolean Percentage Analysis ---
     # plt.figure(figsize=(12, 6))
     # bool_perc = df_bools.mean() * 100
@@ -375,7 +480,7 @@ def analyze_nogood_events(file_path, full_proof_path, processed_proof_path, ver_
 
 
 if __name__ == "__main__":
-    analyze_nogood_events("out7_proof.txt", "proof7_full.drcp", "proof7_full_proc.drcp", 1)
+    analyze_nogood_events("out7_proof.txt", "proof7_full.drcp", "proof7_full_proc.drcp", 2)
 
 
 
