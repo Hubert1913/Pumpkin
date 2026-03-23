@@ -5,7 +5,6 @@ from matplotlib.ticker import MaxNLocator
 import glob
 
 files = glob.glob(r".\out_data\data_*.csv")
-# print(files)
 
 files_raw = glob.glob(r".\out_data\raw_data_*.csv")
 
@@ -66,9 +65,15 @@ for metric in metrics_names:
             plt.subplot(1, 4, i)
             df_t = df_m[df_m.type == plot_type]
 
-            plt.bar(df_t.value, df_t.density, width=bin_width, color="skyblue", edgecolor="black", linewidth=0.5)
+            log_values = np.log10(df_t['value'])
+            plt.bar(log_values, df_t['density'], width=np.diff(log_values).mean(), color="skyblue", edgecolor="black", linewidth=0.5)
             plt.title(plot_type)
-            plt.xlim(0, 1)
+
+            ax = plt.gca()
+            ticks = range(-30, 1, 5)
+            ax.set_xticks(ticks)
+            ax.set_xticklabels([f'$10^{{{t}}}$' for t in ticks])
+
             plt.grid(axis='y', alpha=0.3)
             plt.ylabel("Frequency")
 
@@ -80,13 +85,9 @@ for metric in metrics_names:
             plt.subplot(1, 4, i)
             df_t = df_m[df_m.type == plot_type]
 
-            # plt.plot(df_t['value'], df_t['density'])
-            # plt.fill_between(df_t['value'], df_t['density'], alpha=0.3)
             log_values = np.log10(df_t['value'])
             plt.bar(log_values, df_t['density'], width=np.diff(log_values).mean(), color="skyblue", edgecolor="black", linewidth=0.5)
-            # plt.xlabel('Value')
             plt.ylabel('Frequency')
-            # plt.xscale('log')
 
             ax = plt.gca()
             ticks = range(-35, 22, 8)
@@ -103,10 +104,7 @@ for metric in metrics_names:
             plt.subplot(1, 4, i)
             df_t = df_m[df_m.type == plot_type]
 
-            # plt.plot(df_t['value'], df_t['density'])
-            # plt.fill_between(df_t['value'], df_t['density'], alpha=0.3)
             plt.bar(df_t['value'], df_t['density'], width=0.8, color="skyblue", edgecolor="black", linewidth=0.5)
-            # plt.xlabel('Value')
             plt.ylabel('Frequency')
             ax = plt.gca()
             ax.xaxis.set_major_locator(MaxNLocator(integer=True))
@@ -121,10 +119,7 @@ for metric in metrics_names:
             plt.subplot(1, 4, i)
             df_t = df_m[df_m.type == plot_type]
 
-            # plt.plot(df_t['value'], df_t['density'])
-            # plt.fill_between(df_t['value'], df_t['density'], alpha=0.3)
             plt.bar(df_t['value'], df_t['density'], width=1, color="skyblue", edgecolor="black", linewidth=0.5)
-            # plt.xlabel('Value')
             plt.ylabel('Frequency')
             plt.xscale('symlog', linthresh=30)
 

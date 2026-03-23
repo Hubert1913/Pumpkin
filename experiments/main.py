@@ -190,6 +190,9 @@ def analyze_nogood_events(instance_name: str, input_dir_path: str, output_dir_pa
     bins_log = np.logspace(-35, 20, 101)
     bin_centers_log = np.sqrt(bins_log[:-1] * bins_log[1:])
 
+    bins_log_search_space_size = np.logspace(-30, 0, 101)
+    bin_centers_log_search_space_size = np.sqrt(bins_log_search_space_size[:-1] * bins_log_search_space_size[1:])
+
     raw_rows_for_csv = []
 
     average_inferences_from_nogood_in_proof = sum(nogood_inferences_in_proof.values()) / len(nogood_inferences_in_proof)
@@ -241,9 +244,10 @@ def analyze_nogood_events(instance_name: str, input_dir_path: str, output_dir_pa
     for col in metrics_names:
         total_weight = df_abs[col].size
         if col == "search_space_size":
+            clipped = df_abs[col].clip(lower=bins_log_search_space_size[0])
             density, _ = np.histogram(
-                df_abs[col],
-                bins=bins,
+                clipped,
+                bins=bins_log_search_space_size,
                 density=False
             )
 
@@ -251,7 +255,7 @@ def analyze_nogood_events(instance_name: str, input_dir_path: str, output_dir_pa
                 raw_rows_for_csv.append({
                     "type": "unweighted",
                     "metric": col,
-                    "value": bin_centers[i],
+                    "value": bin_centers_log_search_space_size[i],
                     "density": d / total_weight
                 })
         elif col == "activity":
@@ -300,9 +304,10 @@ def analyze_nogood_events(instance_name: str, input_dir_path: str, output_dir_pa
     for col in metrics_names:
         total_weight = df_abs["conflict_weights"].sum()
         if col == "search_space_size":
+            clipped = df_abs[col].clip(lower=bins_log_search_space_size[0])
             density, _ = np.histogram(
-                df_abs[col],
-                bins=bins,
+                clipped,
+                bins=bins_log_search_space_size,
                 density=False,
                 weights=df_abs["conflict_weights"]
             )
@@ -311,7 +316,7 @@ def analyze_nogood_events(instance_name: str, input_dir_path: str, output_dir_pa
                 raw_rows_for_csv.append({
                     "type": "conflict",
                     "metric": col,
-                    "value": bin_centers[i],
+                    "value": bin_centers_log_search_space_size[i],
                     "density": d / total_weight
                 })
         elif col == "activity":
@@ -361,9 +366,10 @@ def analyze_nogood_events(instance_name: str, input_dir_path: str, output_dir_pa
     for col in metrics_names:
         total_weight = df_abs["proof_weights"].sum()
         if col == "search_space_size":
+            clipped = df_abs[col].clip(lower=bins_log_search_space_size[0])
             density, _ = np.histogram(
-                df_abs[col],
-                bins=bins,
+                clipped,
+                bins=bins_log_search_space_size,
                 density=False,
                 weights=df_abs["proof_weights"]
             )
@@ -372,7 +378,7 @@ def analyze_nogood_events(instance_name: str, input_dir_path: str, output_dir_pa
                 raw_rows_for_csv.append({
                     "type": "proof",
                     "metric": col,
-                    "value": bin_centers[i],
+                    "value": bin_centers_log_search_space_size[i],
                     "density": d / total_weight
                 })
         elif col == "activity":
@@ -421,9 +427,10 @@ def analyze_nogood_events(instance_name: str, input_dir_path: str, output_dir_pa
     for col in metrics_names:
         total_weight = df_abs["useful_proof_weights"].sum()
         if col == "search_space_size":
+            clipped = df_abs[col].clip(lower=bins_log_search_space_size[0])
             density, _ = np.histogram(
-                df_abs[col],
-                bins=bins,
+                clipped,
+                bins=bins_log_search_space_size,
                 density=False,
                 weights=df_abs["useful_proof_weights"]
             )
@@ -432,7 +439,7 @@ def analyze_nogood_events(instance_name: str, input_dir_path: str, output_dir_pa
                 raw_rows_for_csv.append({
                     "type": "useful_proof",
                     "metric": col,
-                    "value": bin_centers[i],
+                    "value": bin_centers_log_search_space_size[i],
                     "density": d / total_weight
                 })
         elif col == "activity":

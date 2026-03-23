@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 FLATZINC_DIR = r".\experiments\flatzinc"
 OUTPUT_DIR = r".\experiments\outputs"
+OUT_CSV_DIR = r".\experiments\out_data"
 SOLVER_EXE = r".\target\release\pumpkin-solver.exe"
 # PROCESSOR_EXE = r".\target\release\pumpkin-proof-processor.exe"
 MAIN_SCRIPT = r".\experiments\main.py"
@@ -128,7 +129,7 @@ def run_instance(fzn_path: Path) -> None:
     #     return
 
     # --- Step 4: Run main.py ---
-    main_cmd = ["python", MAIN_SCRIPT, instance]
+    main_cmd = ["python", MAIN_SCRIPT, instance, OUTPUT_DIR, OUT_CSV_DIR]
 
     log(instance, f"Running main.py: {' '.join(main_cmd)}")
 
