@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 import glob
+import matplotlib.ticker as mticker
 
 files = glob.glob(r".\out_data\data_*.csv")
 
@@ -221,6 +222,93 @@ stats.to_csv(f'./figures/stats.csv', index=False)
 print(f"Stats saved to ./figures/stats.csv")
 print(stats.to_string(index=False))
 
-# fmt = f"{{:.3f}}"
+# fmt = f"{{:.4f}}"
 # print("\n--- LaTeX table ---\n")
 # print(to_latex(stats, float_fmt=fmt))
+
+# --------- 3. COMPUTE PERCENTAGE OF >= 0.5 ----------
+
+ABOVE = {"activity", "search_space_size"}   # >= 0.5
+BELOW = {"size", "lbd", "num_variables", "decision_levels_span"}  # <= 0.5
+
+
+def pct_good_side(bin_centers: np.ndarray, density: np.ndarray, metric: str) -> float:
+    """Integrate density over the 'good' side of 0.5 for the given metric."""
+    dx = bin_centers[1] - bin_centers[0]
+    if metric in ABOVE:
+        mask = bin_centers >= 0.5
+    else:
+        mask = bin_centers <= 0.5
+    return float(np.sum(density[mask]) * dx * 100)
+
+
+def compute_pct(df: pd.DataFrame) -> pd.DataFrame:
+    records = []
+    for (t, m), group in df.groupby(["type", "metric"], sort=False):
+        g = group.sort_values("bin")
+        pct = pct_good_side(g["bin_center"].to_numpy(), g["density"].to_numpy(), m)
+        records.append({"type": t, "metric": m, "pct": pct})
+    return pd.DataFrame(records)
+
+
+def plot(df: pd.DataFrame, output_path: str) -> None:
+    pct_df = compute_pct(df)
+
+    types = plot_types
+    metrics = metrics_names
+
+    cmap = plt.get_cmap("tab10")
+    colors = {m: cmap(i) for i, m in enumerate(metrics)}
+
+    fig, axes = plt.subplots(1, len(types), figsize=(4 * len(types), 4.5),
+                             sharey=True)
+    if len(types) == 1:
+        axes = [axes]
+
+    x = np.arange(len(metrics))
+    bar_width = 0.65
+
+    for ax, t in zip(axes, types):
+        subset = pct_df[pct_df["type"] == t].set_index("metric")
+        heights = [subset.loc[m, "pct"] if m in subset.index else 0.0
+                   for m in metrics]
+        bars = ax.bar(x, heights, width=bar_width,
+                      color=[colors[m] for m in metrics],
+                      edgecolor="white", linewidth=0.6)
+
+        for bar, h in zip(bars, heights):
+            ax.text(bar.get_x() + bar.get_width() / 2, h + 0.8,
+                    f"{h:.1f}%", ha="center", va="bottom",
+                    fontsize=8, color="0.25")
+
+        ax.set_title(t, fontsize=11, fontweight="bold", pad=8)
+        ax.set_xticks(x)
+        ax.set_xticklabels(metrics, rotation=30, ha="right", fontsize=9)
+        ax.set_xlim(-0.5, len(metrics) - 0.5)
+        ax.set_ylim(0, 110)
+        ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("%g%%"))
+        ax.spines[["top", "right"]].set_visible(False)
+        ax.tick_params(axis="y", labelsize=9)
+        ax.grid(axis="y", linestyle="--", linewidth=0.5, alpha=0.5)
+
+    axes[0].set_ylabel("% of propagations", fontsize=10)
+
+    # Legend: metric name + direction hint
+    # def legend_label(m):
+    #     return f"{m}  (≥0.5)" if m in ABOVE else f"{m}  (≤0.5)"
+    #
+    # handles = [plt.Rectangle((0, 0), 1, 1, color=colors[m]) for m in metrics]
+    # labels = [legend_label(m) for m in metrics]
+    # fig.legend(handles, labels, title="Metric", loc="lower center",
+    #            ncol=len(metrics), bbox_to_anchor=(0.5, -0.06),
+    #            fontsize=9, title_fontsize=9, frameon=False)
+
+    fig.suptitle("Percentage of propagations made by nogoods from the 'better' half, according to given metric",
+                 fontsize=13, fontweight="bold", y=1.02)
+
+    plt.tight_layout()
+    fig.savefig(output_path, dpi=150, bbox_inches="tight")
+    print(f"Saved to {output_path}")
+
+
+plot(df_combined, output_path="./figures/percentages.png")
