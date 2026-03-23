@@ -9,6 +9,7 @@ use crate::basic_types::PredicateId;
 use crate::basic_types::PropagationStatusCP;
 use crate::basic_types::PropagatorConflict;
 use crate::basic_types::PropositionalConjunction;
+use crate::containers::HashMap;
 use crate::containers::HashSet;
 use crate::containers::KeyedVec;
 use crate::containers::StorageKey;
@@ -18,6 +19,7 @@ use crate::engine::notifications::NotificationEngine;
 use crate::engine::predicates::predicate::Predicate;
 use crate::engine::reason::Reason;
 use crate::predicate;
+use crate::predicates::PredicateType;
 use crate::proof::InferenceCode;
 use crate::proof::InferenceLabel;
 use crate::propagation::EnqueueDecision;
@@ -38,6 +40,7 @@ use crate::pumpkin_assert_moderate;
 use crate::pumpkin_assert_simple;
 use crate::state::Conflict;
 use crate::state::PropagatorHandle;
+use crate::variables::DomainId;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::sync::{Arc, Mutex};
@@ -180,10 +183,7 @@ impl Propagator for NogoodPropagator {
 
         // First we perform nogood management to ensure that the database does not grow excessively
         // large with "bad" nogoods
-        self.clean_up_learned_nogoods_if_needed(
-            context.assignments,
-            context.notification_engine,
-        );
+        self.clean_up_learned_nogoods_if_needed(context.assignments, context.notification_engine);
 
         if self.watch_lists.len() <= context.num_predicate_ids() {
             self.watch_lists
@@ -398,9 +398,9 @@ impl Propagator for NogoodPropagator {
                 // This would lead to less rescaling, and anyway we are (probably) only interested
                 // in the relative order of nogoods within a tier.
                 self.learned_nogood_ids.iter().for_each(|i| {
-                        let i = self.nogood_predicates.get_nogood_index(i);
-                        self.nogood_info[i].activity /= self.parameters.max_activity;
-                    });
+                    let i = self.nogood_predicates.get_nogood_index(i);
+                    self.nogood_info[i].activity /= self.parameters.max_activity;
+                });
                 self.parameters.activity_bump_increment /= self.parameters.max_activity;
             }
 
@@ -457,15 +457,63 @@ impl NogoodPropagator {
 
         let decision_levels_span = (context.get_checkpoint() - lowest_decision_level) as u32;
 
+        // For search_space_size we need to build bounds & holes based on the nogood
+        // At this point the nogood should already be semantically minimized
+        let mut lower_bounds: HashMap<DomainId, i32> = HashMap::default();
+        let mut upper_bounds: HashMap<DomainId, i32> = HashMap::default();
+        let mut holes: HashMap<DomainId, Vec<i32>> = HashMap::default();
+
+        for &var in &used_variables {
+            let _ = lower_bounds.insert(var, context.lower_bound(&var));
+            let _ = upper_bounds.insert(var, context.upper_bound(&var));
+            let _ = holes.insert(var, Vec::new());
+        }
+
+        for &pred in &nogood {
+            let dom_id = pred.get_domain();
+            let rhs = pred.get_right_hand_side();
+            match pred.get_predicate_type() {
+                PredicateType::LowerBound => {
+                    if rhs > *lower_bounds.get(&dom_id).unwrap() {
+                        let _ = lower_bounds.insert(dom_id, rhs);
+                    }
+                }
+                PredicateType::UpperBound => {
+                    if rhs < *upper_bounds.get(&dom_id).unwrap() {
+                        let _ = upper_bounds.insert(dom_id, rhs);
+                    }
+                }
+                PredicateType::NotEqual => {
+                    holes.get_mut(&dom_id).unwrap().push(rhs);
+                }
+                PredicateType::Equal => {
+                    let _ = lower_bounds.insert(dom_id, rhs);
+                    let _ = upper_bounds.insert(dom_id, rhs);
+                }
+            }
+        }
+
         let mut search_space_size: f64 = 1.0;
 
         for var in used_variables {
-            let initial_size = context.initial_upper_bound(var) - context.initial_lower_bound(var)
-                + 1
-                - context.initial_holes(var).len() as i32;
+            let initial_lb = context.initial_lower_bound(var);
+            let initial_ub = context.initial_upper_bound(var);
+            let initial_size = initial_ub - initial_lb + 1
+                - context
+                    .initial_holes(var)
+                    .iter()
+                    .filter(|&&h| h >= initial_lb && h <= initial_ub)
+                    .count() as i32;
 
-            let size_in_nogood = context.upper_bound(&var) - context.lower_bound(&var) + 1
-                - context.get_holes(&var).count() as i32;
+            let pred_lb = *lower_bounds.get(&var).unwrap();
+            let pred_ub = *upper_bounds.get(&var).unwrap();
+            let pred_holes = holes.get(&var).unwrap();
+
+            let size_in_nogood = pred_ub - pred_lb + 1
+                - pred_holes
+                    .iter()
+                    .filter(|&&h| h >= pred_lb && h <= pred_ub)
+                    .count() as i32;
 
             search_space_size *= size_in_nogood as f64 / initial_size as f64;
         }
@@ -520,20 +568,33 @@ impl NogoodPropagator {
         // let reason = Reason::DynamicLazy(nogood_id.id as u64);
         let reason = Reason::DynamicLazy(self.propagations_count as u64);
 
-        let inference_code =
+        let old_inference_code =
             &self.inference_codes[self.nogood_predicates.get_nogood_index(&nogood_id)];
+        let old_label = old_inference_code.label();
+        let old_tag = old_inference_code.tag();
+        let propagation_id = self.propagations_count;
+        let new_label = DynamicLabel {
+            label: Arc::from(format!("{old_label}-{propagation_id}")),
+        };
+
+        // let inference_code =
+        //     &self.inference_codes[self.nogood_predicates.get_nogood_index(&nogood_id)];
 
         let predicate = !context
             .notification_engine
             .get_predicate(self.nogood_predicates[nogood_id][0]);
+        // context
+        //     .post(predicate, reason, inference_code)
+        //     .expect("Cannot fail to add the asserting predicate.");
+
         context
-            .post(predicate, reason, inference_code)
+            .post(predicate, reason, &InferenceCode::new(old_tag, new_label))
             .expect("Cannot fail to add the asserting predicate.");
 
         // We then record the nogood
         self.learned_nogood_ids.push(nogood_id);
 
-        // self.print_nogood_statistics(nogood_id);
+        self.print_nogood_statistics(nogood_id);
         self.propagation_to_nogood_map.push(nogood_id.id);
         self.propagations_count += 1;
     }

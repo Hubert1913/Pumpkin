@@ -1,0 +1,231 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
+import glob
+
+files = glob.glob(r".\out_data\data_*.csv")
+# print(files)
+
+files_raw = glob.glob(r".\out_data\raw_data_*.csv")
+
+dfs = [pd.read_csv(f) for f in files]
+dfs_raw = [pd.read_csv(f) for f in files_raw]
+
+df_all = pd.concat(dfs)
+
+df_combined = (
+    df_all
+    .groupby(["type", "metric", "bin", "bin_center"])["density"]
+    .sum()
+    .reset_index()
+)
+
+df_combined_raw = (
+    pd.concat(dfs_raw)
+    .groupby(["type", "metric", "value"])["density"]
+    .sum()
+    .reset_index()
+)
+
+df_combined["density"] /= len(files)
+df_combined_raw["density"] /= len(files)
+
+bin_width = 1 / 100
+
+metrics_names = [
+    "size", "activity", "lbd", "num_variables",
+    "decision_levels_span", "search_space_size"
+]
+
+plot_types = ["unweighted", "conflict", "proof", "useful_proof"]
+
+for metric in metrics_names:
+    df_m = df_combined[df_combined.metric == metric]
+    plt.figure(figsize=(20, 5))
+    for i, plot_type in enumerate(plot_types, 1):
+        plt.subplot(1, 4, i)
+        df_t = df_m[df_m.type == plot_type]
+
+        plt.bar(df_t.bin_center, df_t.density, width=bin_width, color="skyblue", edgecolor="black", linewidth=0.5)
+        plt.title(plot_type)
+        plt.xlim(0, 1)
+        plt.grid(axis='y', alpha=0.3)
+        plt.ylabel("Density")
+
+    plt.suptitle(f"Distribution of {metric}", size=16)
+    plt.tight_layout()
+    plt.savefig(f'./figures/hist_{metric}.png')
+
+for metric in metrics_names:
+    df_m = df_combined_raw[df_combined_raw.metric == metric]
+    plt.figure(figsize=(20, 5))
+
+    if metric == "search_space_size":
+        for i, plot_type in enumerate(plot_types, 1):
+            plt.subplot(1, 4, i)
+            df_t = df_m[df_m.type == plot_type]
+
+            plt.bar(df_t.value, df_t.density, width=bin_width, color="skyblue", edgecolor="black", linewidth=0.5)
+            plt.title(plot_type)
+            plt.xlim(0, 1)
+            plt.grid(axis='y', alpha=0.3)
+            plt.ylabel("Frequency")
+
+        plt.suptitle(f"Distribution raw values of {metric}", size=16)
+        plt.tight_layout()
+        plt.savefig(f'./figures/raw_hist_{metric}.png')
+    elif metric == "activity":
+        for i, plot_type in enumerate(plot_types, 1):
+            plt.subplot(1, 4, i)
+            df_t = df_m[df_m.type == plot_type]
+
+            # plt.plot(df_t['value'], df_t['density'])
+            # plt.fill_between(df_t['value'], df_t['density'], alpha=0.3)
+            log_values = np.log10(df_t['value'])
+            plt.bar(log_values, df_t['density'], width=np.diff(log_values).mean(), color="skyblue", edgecolor="black", linewidth=0.5)
+            # plt.xlabel('Value')
+            plt.ylabel('Frequency')
+            # plt.xscale('log')
+
+            ax = plt.gca()
+            ticks = range(-35, 22, 8)
+            ax.set_xticks(ticks)
+            ax.set_xticklabels([f'$10^{{{t}}}$' for t in ticks])
+
+            plt.title(plot_type)
+            plt.grid(axis='y', alpha=0.3)
+        plt.suptitle(f"Distribution raw values of {metric}", size=16)
+        plt.tight_layout()
+        plt.savefig(f'./figures/raw_hist_{metric}.png')
+    elif metric == "lbd" or metric == "decision_levels_span":
+        for i, plot_type in enumerate(plot_types, 1):
+            plt.subplot(1, 4, i)
+            df_t = df_m[df_m.type == plot_type]
+
+            # plt.plot(df_t['value'], df_t['density'])
+            # plt.fill_between(df_t['value'], df_t['density'], alpha=0.3)
+            plt.bar(df_t['value'], df_t['density'], width=0.8, color="skyblue", edgecolor="black", linewidth=0.5)
+            # plt.xlabel('Value')
+            plt.ylabel('Frequency')
+            ax = plt.gca()
+            ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+
+            plt.title(plot_type)
+            plt.grid(axis='y', alpha=0.3)
+        plt.suptitle(f"Distribution raw values of {metric}", size=16)
+        plt.tight_layout()
+        plt.savefig(f'./figures/raw_hist_{metric}.png')
+    else:
+        for i, plot_type in enumerate(plot_types, 1):
+            plt.subplot(1, 4, i)
+            df_t = df_m[df_m.type == plot_type]
+
+            # plt.plot(df_t['value'], df_t['density'])
+            # plt.fill_between(df_t['value'], df_t['density'], alpha=0.3)
+            plt.bar(df_t['value'], df_t['density'], width=1, color="skyblue", edgecolor="black", linewidth=0.5)
+            # plt.xlabel('Value')
+            plt.ylabel('Frequency')
+            plt.xscale('symlog', linthresh=30)
+
+            plt.title(plot_type)
+            plt.grid(axis='y', alpha=0.3)
+        plt.suptitle(f"Distribution raw values of {metric}", size=16)
+        plt.tight_layout()
+        plt.savefig(f'./figures/raw_hist_{metric}.png')
+
+
+# --------- 2. COMPUTE STATS FROM HISTOGRAMS ----------
+
+
+def stats_from_histogram(bin_centers: np.ndarray, density: np.ndarray) -> dict:
+    """
+    Compute mean, std, and skewness from a normalised histogram (density * bin_width ≈ 1).
+
+    Uses the trapezoid rule so the result is exact for any bin spacing.
+    """
+    x = bin_centers
+    p = density
+
+    dx = bin_centers[1] - bin_centers[0]
+    m1 = np.dot(x, p) * dx
+    m2 = np.dot(x ** 2, p) * dx
+    m3 = np.dot(x ** 3, p) * dx
+
+    variance = m2 - m1 ** 2
+    std = np.sqrt(np.maximum(variance, 0.0))  # guard against tiny negatives from rounding
+
+    # Pearson's skewness  (E[X³] - 3·μ·σ² - μ³) / σ³
+    if std > 0:
+        skewness = (m3 - 3 * m1 * variance - m1 ** 3) / std ** 3
+    else:
+        skewness = np.nan
+
+    return {"mean": m1, "std": std, "skewness": skewness}
+
+
+def compute_stats(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Apply stats_from_histogram to every (type, metric) group.
+
+    Parameters
+    ----------
+    df : DataFrame with columns [type, metric, bin, bin_center, density]
+
+    Returns
+    -------
+    DataFrame with columns [type, metric, mean, std, skewness]
+    """
+    records = []
+    for (t, m), group in df.groupby(["type", "metric"], sort=False):
+        g = group.sort_values("bin")
+        s = stats_from_histogram(g["bin_center"].to_numpy(), g["density"].to_numpy())
+        records.append({"type": t, "metric": m, **s})
+
+    return pd.DataFrame(records)
+
+
+def to_latex(stats: pd.DataFrame, float_fmt: str = "{:.4f}") -> str:
+    """
+    Render a LaTeX booktabs table grouped by type.
+    """
+    lines = [
+        r"\begin{table}[ht]",
+        r"\centering",
+        r"\begin{tabular}{llrrr}",
+        r"\toprule",
+        r"Type & Metric & Mean & Std & Skewness \\",
+        r"\midrule",
+    ]
+
+    for t, group in stats.groupby("type", sort=False):
+        first = True
+        for _, row in group.iterrows():
+            type_cell = t if first else ""
+            first = False
+            mean_s = float_fmt.format(row["mean"])
+            std_s = float_fmt.format(row["std"])
+            skew_s = float_fmt.format(row["skewness"])
+            lines.append(f"{type_cell} & {row['metric']} & {mean_s} & {std_s} & {skew_s} \\\\")
+        lines.append(r"\midrule")
+
+    # Remove the last \midrule and replace with \bottomrule
+    lines[-1] = r"\bottomrule"
+    lines += [
+        r"\end{tabular}",
+        r"\caption{Summary statistics derived from histogram data.}",
+        r"\label{tab:histogram_stats}",
+        r"\end{table}",
+    ]
+    return "\n".join(lines)
+
+
+stats = compute_stats(df_combined)
+
+stats.to_csv(f'./figures/stats.csv', index=False)
+print(f"Stats saved to ./figures/stats.csv")
+print(stats.to_string(index=False))
+
+# fmt = f"{{:.3f}}"
+# print("\n--- LaTeX table ---\n")
+# print(to_latex(stats, float_fmt=fmt))

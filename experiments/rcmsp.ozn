@@ -1,8 +1,0 @@
-output ["% rcmsp\n",("s = "++show(s))++";\n",("k = "++show(k))++";\n",("constraint makespan = "++show(makespan))++";\n",("constraint objective = "++show(objective))++";\n"];
-set of int: Tasks = 1..14;
-array [Tasks] of int: s;
-int: n_tasks = 14;
-int: t_max = 42;
-array [Tasks] of int: k;
-int: makespan = max([s[i]-k[i]*s[n_tasks] | i in Tasks where i > 0 /\ i < n_tasks])-min([s[i]-k[i]*s[n_tasks] | i in Tasks where i > 0 /\ i < n_tasks])+1;
-int: objective = s[n_tasks]*t_max+makespan;
