@@ -5,7 +5,8 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --partition=compute-p2
 #SBATCH --time=02:30:00
-#SBATCH --mem-per-cpu=6000M
+#SBATCH --mem-per-cpu=4000M
+#SBATCH --account=education-eemcs-msc-cs
 #SBATCH --output=/scratch/hnowak/nogood-metrics/optim/slurm-logs/slurm_%A_%a.out
 #SBATCH --error=/scratch/hnowak/nogood-metrics/optim/slurm-logs/slurm_%A_%a.err
 
