@@ -11,6 +11,7 @@
 #SBATCH --error=/scratch/hnowak/nogood-metrics/optim/slurm-logs/slurm_%A_%a.err
 
 # ── Modules ──────────────────────────────────────────────────────────────────
+module load 2025
 module load python
 
 # ── Paths ────────────────────────────────────────────────────────────────────
