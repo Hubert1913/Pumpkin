@@ -1,9 +1,11 @@
 #!/bin/bash
 #SBATCH --job-name=nogood-metrics-optim
 #SBATCH --array=0-459
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
 #SBATCH --partition=compute-p2
 #SBATCH --time=02:30:00
-#SBATCH --mem=6000M
+#SBATCH --mem-per-cpu=6000M
 #SBATCH --output=/scratch/hnowak/nogood-metrics/optim/slurm-logs/slurm_%A_%a.out
 #SBATCH --error=/scratch/hnowak/nogood-metrics/optim/slurm-logs/slurm_%A_%a.err
 
