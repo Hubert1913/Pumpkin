@@ -13,6 +13,8 @@
 # ── Modules ──────────────────────────────────────────────────────────────────
 module load 2025
 module load python
+module load py-numpy
+module load py-pandas
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 FZN_DIR="/scratch/hnowak/nogood-metrics/optim/flatzinc"
@@ -82,13 +84,13 @@ echo "[$INSTANCE_NAME] Conditions met (solveTime=$SOLVE_TIME) — running Python
 PY_STDOUT="$OUT_DIR/${INSTANCE_NAME}_stdout_python.log"
 PY_STDERR="$OUT_DIR/${INSTANCE_NAME}_stderr_python.log"
 
-# echo "Before:"
-# which python
+echo "Before:"
+which python
 
-# source /scratch/hnowak/nogood-metrics/optim/env/bin/activate
+source ~/venvs/nogood-metrics-venv/bin/activate
 
-# echo "After:"
-# which python
+echo "After:"
+which python
 
 # Verify deps are installed — if not, install them once on the login node:
 #   module load python/3.11 && pip install --user pandas numpy file_read_backwards
@@ -99,7 +101,7 @@ PY_STDERR="$OUT_DIR/${INSTANCE_NAME}_stderr_python.log"
 
 cd "$SCRIPT_DIR"
 
-/scratch/hnowak/nogood-metrics/optim/env/bin/python main.py \
+python main.py \
     "$INSTANCE_NAME" \
     "$OUT_DIR" \
     "$CSV_DIR" \
