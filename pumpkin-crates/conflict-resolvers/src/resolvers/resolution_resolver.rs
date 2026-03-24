@@ -3,6 +3,7 @@ use pumpkin_core::asserts::pumpkin_assert_moderate;
 use pumpkin_core::asserts::pumpkin_assert_simple;
 use pumpkin_core::conflict_resolving::ConflictAnalysisContext;
 use pumpkin_core::conflict_resolving::ConflictResolver;
+use pumpkin_core::containers::HashSet;
 use pumpkin_core::containers::KeyValueHeap;
 use pumpkin_core::containers::StorageKey;
 use pumpkin_core::create_statistics_struct;
@@ -103,7 +104,7 @@ pub enum AnalysisMode {
 
 impl ConflictResolver for ResolutionResolver {
     fn resolve_conflict(&mut self, context: &mut ConflictAnalysisContext) {
-        self.learn_nogood(context);
+        let constraints_count = self.learn_nogood(context);
 
         let lbd = self
             .lbd_helper
@@ -117,8 +118,11 @@ impl ConflictResolver for ResolutionResolver {
             .average_learned_nogood_length
             .add_term(self.processed_nogood_predicates.len() as u64);
 
-        let backtrack_level =
-            context.process_learned_nogood(self.processed_nogood_predicates.clone(), lbd);
+        let backtrack_level = context.process_learned_nogood(
+            self.processed_nogood_predicates.clone(),
+            lbd,
+            constraints_count,
+        );
 
         self.statistics
             .average_backtrack_amount
@@ -149,10 +153,12 @@ impl ResolutionResolver {
         }
     }
 
-    pub(crate) fn learn_nogood(&mut self, context: &mut ConflictAnalysisContext) {
+    pub(crate) fn learn_nogood(&mut self, context: &mut ConflictAnalysisContext) -> u32 {
         self.clean_up();
 
-        let conflict_nogood = context.get_conflict_nogood();
+        let mut used_constraint_tags = HashSet::default();
+
+        let conflict_nogood = context.get_conflict_nogood(Some(&mut used_constraint_tags));
 
         // Initialise the data structures with the conflict nogood.
         for predicate in conflict_nogood.iter() {
@@ -199,6 +205,7 @@ impl ResolutionResolver {
                     &self.predicate_id_generator,
                 ),
                 &mut self.reason_buffer,
+                Some(&mut used_constraint_tags),
             );
 
             for i in 0..self.reason_buffer.len() {
@@ -206,7 +213,8 @@ impl ResolutionResolver {
             }
         }
 
-        self.extract_final_nogood(context)
+        self.extract_final_nogood(context);
+        used_constraint_tags.len() as u32
     }
 
     /// Clears all data structures to prepare for the new conflict analysis.

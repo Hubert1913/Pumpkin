@@ -12,6 +12,7 @@ pub(crate) struct NogoodInfo {
     pub(crate) num_variables: u32,
     pub(crate) decision_levels_span: u32,
     pub(crate) search_space_size: f64,
+    pub(crate) constraints_count: u32,
     /// Whether the nogood has been marked as deleted; this means that it can be replaced by
     /// another nogood in the future.
     pub(crate) is_deleted: bool,
@@ -35,6 +36,7 @@ impl NogoodInfo {
         num_variables: u32,
         decision_levels_span: u32,
         search_space_size: f64,
+        constraints_count: u32,
     ) -> Self {
         NogoodInfo {
             is_learned: true,
@@ -43,6 +45,7 @@ impl NogoodInfo {
             num_variables,
             decision_levels_span,
             search_space_size,
+            constraints_count,
             is_deleted: false,
             block_bumps: false,
             activity: 0.0,
@@ -62,6 +65,7 @@ impl NogoodInfo {
             num_variables: 0,
             decision_levels_span: 0,
             search_space_size: 1.0,
+            constraints_count: 0,
             is_deleted: false,
             block_bumps: false,
             activity: 0.0,

@@ -229,7 +229,7 @@ impl ConstraintSatisfactionSolver {
             rng: &mut self.internal_parameters.random_generator,
         };
 
-        let conflict = conflict_analysis_context.get_conflict_nogood();
+        let conflict = conflict_analysis_context.get_conflict_nogood(None);
 
         let context = FinalizingContext {
             conflict: conflict.into(),
@@ -428,7 +428,7 @@ impl ConstraintSatisfactionSolver {
 
                     rng: &mut self.internal_parameters.random_generator,
                 };
-                let mut predicates = context.get_conflict_nogood();
+                let mut predicates = context.get_conflict_nogood(None);
                 let mut core: HashSet<Predicate> = HashSet::default();
 
                 while let Some(predicate) = predicates.pop() {
@@ -444,6 +444,7 @@ impl ConstraintSatisfactionSolver {
                         context.unit_nogood_inference_codes,
                         &mut predicates,
                         context.state,
+                        &mut None,
                     );
                 }
 
@@ -812,7 +813,7 @@ impl ConstraintSatisfactionSolver {
                     state: &mut self.state,
                 };
 
-                explain_root_assignment(&mut context, premise);
+                explain_root_assignment(&mut context, premise, &mut None);
             }
 
             // Log the nogood which adds the root-level knowledge to the proof.
