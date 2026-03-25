@@ -24,7 +24,7 @@ from matplotlib.colors import TwoSlopeNorm
 VALUE_COLS = [
     "size", "activity", "lbd", "num_variables",
     "decision_levels_span", "search_space_size",
-    "constraints_count"
+    "constraints_count", "constraints_count_recursive"
 ]
 WEIGHT_COLS = ["unweighted", "conflict_weights", "proof_weights", "useful_proof_weights"]   # must match the 'weight' values in your CSVs
 

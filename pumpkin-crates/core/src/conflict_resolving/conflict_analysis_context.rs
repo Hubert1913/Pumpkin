@@ -224,7 +224,7 @@ impl ConflictAnalysisContext<'_> {
         &mut self,
         learned_nogood_predicates: Vec<Predicate>,
         lbd: u32,
-        constraint_count: u32,
+        used_constraint_tags: HashSet<ConstraintTag>,
     ) -> usize {
         // important to notify about the conflict _before_ backtracking removes literals from
         // the trail -> although in the current version this does nothing but notify that a
@@ -265,7 +265,7 @@ impl ConflictAnalysisContext<'_> {
             learned_nogood.to_vec(),
             inference_code,
             &mut propagation_context,
-            constraint_count,
+            used_constraint_tags,
         );
 
         #[cfg(feature = "check-propagations")]

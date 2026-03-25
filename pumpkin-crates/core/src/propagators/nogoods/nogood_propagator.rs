@@ -20,6 +20,7 @@ use crate::engine::predicates::predicate::Predicate;
 use crate::engine::reason::Reason;
 use crate::predicate;
 use crate::predicates::PredicateType;
+use crate::proof::ConstraintTag;
 use crate::proof::InferenceCode;
 use crate::proof::InferenceLabel;
 use crate::propagation::EnqueueDecision;
@@ -89,6 +90,10 @@ pub struct NogoodPropagator {
     propagation_to_nogood_map: Vec<u32>,
     /// Counter of propagations done by nogoods
     propagations_count: u32,
+    /// A map from a given nogoods ConstraintTag to list of ConstraintTags of (initial) constraints
+    /// that were used to derive it.
+    /// It takes into the account that nogoods can be used to derive other nogoods.
+    nogood_constraints_map: HashMap<ConstraintTag, Vec<ConstraintTag>>,
     /// Writer for writing nogood statistics to file
     writer: Arc<Mutex<BufWriter<File>>>,
 }
@@ -133,6 +138,7 @@ impl PropagatorConstructor for NogoodPropagatorConstructor {
             temp_nogood_reason: Default::default(),
             propagation_to_nogood_map: Default::default(),
             propagations_count: 0,
+            nogood_constraints_map: Default::default(),
             writer: Arc::new(Mutex::new(BufWriter::new(output_file))),
         }
     }
@@ -423,8 +429,25 @@ impl NogoodPropagator {
         nogood: Vec<Predicate>,
         inference_code: InferenceCode,
         context: &mut PropagationContext,
-        constraint_count: u32,
+        used_constraint_tags: HashSet<ConstraintTag>,
     ) {
+        let mut processed_cons_tags: HashSet<ConstraintTag> = HashSet::default();
+
+        for used_cons_tag in &used_constraint_tags {
+            if let Some(cons_tags) = self.nogood_constraints_map.get(used_cons_tag) {
+                processed_cons_tags.extend(cons_tags);
+            } else {
+                let _ = processed_cons_tags.insert(*used_cons_tag);
+            }
+        }
+
+        let processed_cons_tags_len = processed_cons_tags.len() as u32;
+
+        let _ = self.nogood_constraints_map.insert(
+            inference_code.tag(),
+            processed_cons_tags.into_iter().collect::<Vec<_>>(),
+        );
+
         // We treat unit nogoods in a special way by adding it as a permanent nogood at the
         // root-level; this is essentially the same as adding a predicate at the root level
         if nogood.len() == 1 {
@@ -534,7 +557,8 @@ impl NogoodPropagator {
             num_variables,
             decision_levels_span,
             search_space_size,
-            constraint_count,
+            used_constraint_tags.len() as u32,
+            processed_cons_tags_len,
         ));
         // let _ = self.inference_codes.push(inference_code);
         let old_label = inference_code.label();
@@ -1133,7 +1157,7 @@ impl NogoodPropagator {
         let nogood_info = &self.nogood_info[self.nogood_predicates.get_nogood_index(&id)];
 
         if nogood_info.is_learned {
-            let mut counts: Vec<u32> = vec![0; 14];
+            let mut counts: Vec<u32> = vec![0; 16];
 
             let mut nogoods_length = self.learned_nogood_ids.len();
 
@@ -1182,13 +1206,22 @@ impl NogoodPropagator {
                 } else if self.nogood_info[i].constraints_count == nogood_info.constraints_count {
                     counts[13] += 1;
                 }
+                if self.nogood_info[i].constraints_count_recursive
+                    < nogood_info.constraints_count_recursive
+                {
+                    counts[14] += 1;
+                } else if self.nogood_info[i].constraints_count_recursive
+                    == nogood_info.constraints_count_recursive
+                {
+                    counts[15] += 1;
+                }
             }
 
             let mut writer = self.writer.lock().unwrap();
 
             writeln!(
                 writer,
-                "NogoodProp {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}",
+                "NogoodProp {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {}",
                 self.propagations_count,
                 id.id,
                 (counts[0] + counts[1] / 2) as f64 / nogoods_length as f64,
@@ -1205,6 +1238,8 @@ impl NogoodPropagator {
                 nogood_info.search_space_size,
                 (counts[12] + counts[13] / 2) as f64 / nogoods_length as f64,
                 nogood_info.constraints_count,
+                (counts[14] + counts[15] / 2) as f64 / nogoods_length as f64,
+                nogood_info.constraints_count_recursive,
             )
             .unwrap();
         }

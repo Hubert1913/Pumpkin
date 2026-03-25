@@ -36,7 +36,7 @@ bin_width = 1 / 100
 metrics_names = [
     "size", "activity", "lbd", "num_variables",
     "decision_levels_span", "search_space_size",
-    "constraints_count"
+    "constraints_count", "constraints_count_recursive"
 ]
 
 plot_types = ["unweighted", "conflict", "proof", "useful_proof"]
@@ -101,7 +101,7 @@ for metric in metrics_names:
         plt.suptitle(f"Distribution raw values of {metric}", size=16)
         plt.tight_layout()
         plt.savefig(f'./figures/raw_hist_{metric}.png')
-    elif metric == "lbd" or metric == "decision_levels_span" or metric == "constraints_count":
+    elif metric == "lbd" or metric == "decision_levels_span" or metric == "constraints_count" or metric == "constraints_count_recursive":
         for i, plot_type in enumerate(plot_types, 1):
             plt.subplot(1, 4, i)
             df_t = df_m[df_m.type == plot_type]
@@ -230,7 +230,7 @@ print(stats.to_string(index=False))
 # --------- 3. COMPUTE PERCENTAGE OF >= 0.5 ----------
 
 ABOVE = {"activity", "search_space_size"}   # >= 0.5
-BELOW = {"size", "lbd", "num_variables", "decision_levels_span", "constraints_count"}  # <= 0.5
+BELOW = {"size", "lbd", "num_variables", "decision_levels_span", "constraints_count", "constraints_count_recursive"}  # <= 0.5
 
 
 def pct_good_side(bin_centers: np.ndarray, density: np.ndarray, metric: str) -> float:

@@ -10,6 +10,7 @@ use pumpkin_core::create_statistics_struct;
 use pumpkin_core::predicates::Lbd;
 use pumpkin_core::predicates::Predicate;
 use pumpkin_core::predicates::PredicateIdGenerator;
+use pumpkin_core::proof::ConstraintTag;
 use pumpkin_core::propagation::PredicateId;
 use pumpkin_core::propagation::ReadDomains;
 use pumpkin_core::state::CurrentNogood;
@@ -104,7 +105,7 @@ pub enum AnalysisMode {
 
 impl ConflictResolver for ResolutionResolver {
     fn resolve_conflict(&mut self, context: &mut ConflictAnalysisContext) {
-        let constraints_count = self.learn_nogood(context);
+        let used_constraint_tags = self.learn_nogood(context);
 
         let lbd = self
             .lbd_helper
@@ -121,7 +122,7 @@ impl ConflictResolver for ResolutionResolver {
         let backtrack_level = context.process_learned_nogood(
             self.processed_nogood_predicates.clone(),
             lbd,
-            constraints_count,
+            used_constraint_tags,
         );
 
         self.statistics
@@ -153,7 +154,10 @@ impl ResolutionResolver {
         }
     }
 
-    pub(crate) fn learn_nogood(&mut self, context: &mut ConflictAnalysisContext) -> u32 {
+    pub(crate) fn learn_nogood(
+        &mut self,
+        context: &mut ConflictAnalysisContext,
+    ) -> HashSet<ConstraintTag> {
         self.clean_up();
 
         let mut used_constraint_tags = HashSet::default();
@@ -214,7 +218,7 @@ impl ResolutionResolver {
         }
 
         self.extract_final_nogood(context);
-        used_constraint_tags.len() as u32
+        used_constraint_tags
     }
 
     /// Clears all data structures to prepare for the new conflict analysis.
