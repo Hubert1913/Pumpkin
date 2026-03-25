@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=nogood-metrics-optim
-#SBATCH --array=0-16
+#SBATCH --array=0-8
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --partition=compute-p2
@@ -100,6 +100,11 @@ which python
 # }
 
 cd "$SCRIPT_DIR"
+
+echo "VIRTUAL_ENV: $VIRTUAL_ENV"
+echo "which python: $(which python)"
+python -c "import sys; print('sys.path:', sys.path)"
+python -c "import file_read_backwards; print('frb found')" 2>&1
 
 python main.py \
     "$INSTANCE_NAME" \
