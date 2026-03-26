@@ -63,7 +63,7 @@ pub(crate) fn finalize_proof(context: FinalizingContext<'_>) {
 fn finalize_proof_impl(
     context: &mut RootExplanationContext<'_>,
     mut to_explain: BTreeMap<usize, HashSet<Predicate>>,
-    mut constraint_tags_set: &mut Option<&mut HashSet<ConstraintTag>>,
+    constraint_tags_set: &mut Option<&mut HashSet<ConstraintTag>>,
 ) -> Vec<Predicate> {
     let mut required_assumptions = vec![];
 
@@ -115,7 +115,7 @@ fn finalize_proof_impl(
                 context.unit_nogood_inference_codes,
                 &mut reason,
                 context.state,
-                &mut constraint_tags_set,
+                constraint_tags_set,
             );
 
             // Look for the reasons of the propagation premise.

@@ -837,7 +837,7 @@ impl NogoodPropagator {
         // We would then like to remove them to slightly improve performance
         // However, we don't want to check them too often, as it involves iterating all nogoods, so just do it from time to time
 
-        if self.propagations_count % 1000 == 0 {
+        if self.propagations_count.is_multiple_of(1000) {
             self.remove_deleted_nogoods_from_watchers(assignments, notification_engine);
         }
     }

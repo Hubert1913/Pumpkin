@@ -572,7 +572,7 @@ fn run() -> PumpkinResult<()> {
         lbd_threshold_low: args.learning_low_lbd_threshold,
         lbd_threshold_high: args.learning_high_lbd_threshold,
         activity_bump_increment: 1.0,
-        stats_path: stats_path,
+        stats_path,
     };
 
     let should_minimise_nogoods = if args.proof_type == ProofType::Full {
