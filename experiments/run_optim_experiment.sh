@@ -1,11 +1,11 @@
 #!/bin/bash
 #SBATCH --job-name=nogood-metrics-optim
-#SBATCH --array=0-8
+#SBATCH --array=0-459
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --partition=compute-p2
-#SBATCH --time=00:05:00
-#SBATCH --mem-per-cpu=2000M
+#SBATCH --time=02:30:00
+#SBATCH --mem-per-cpu=4000M
 #SBATCH --account=education-eemcs-msc-cs
 #SBATCH --output=/scratch/hnowak/nogood-metrics/optim/slurm-logs/slurm_%A_%a.out
 #SBATCH --error=/scratch/hnowak/nogood-metrics/optim/slurm-logs/slurm_%A_%a.err
@@ -72,9 +72,9 @@ fi
 SOLVE_TIME=$(echo "$SOLVE_TIME_LINE" | sed 's/^%%%mzn-stat: solveTime=//')
 
 # Use awk for float comparison (bash cannot compare floats natively)
-PASSES=$(awk -v t="$SOLVE_TIME" 'BEGIN { print (t < 50) ? "1" : "0" }')
+PASSES=$(awk -v t="$SOLVE_TIME" 'BEGIN { print (t > 30) ? "1" : "0" }')
 if [[ "$PASSES" != "1" ]]; then
-    echo "[$INSTANCE_NAME] SKIP — solveTime=$SOLVE_TIME is not < 50."
+    echo "[$INSTANCE_NAME] SKIP — solveTime=$SOLVE_TIME is not > 30."
     exit 0
 fi
 
@@ -83,14 +83,6 @@ echo "[$INSTANCE_NAME] Conditions met (solveTime=$SOLVE_TIME) — running Python
 # ── Step 3: Run the Python analysis script ────────────────────────────────────
 PY_STDOUT="$OUT_DIR/${INSTANCE_NAME}_stdout_python.log"
 PY_STDERR="$OUT_DIR/${INSTANCE_NAME}_stderr_python.log"
-
-echo "Before:"
-which python
-
-source ~/venvs/nogood-metrics-venv/bin/activate
-
-echo "After:"
-which python
 
 # Verify deps are installed — if not, install them once on the login node:
 #   module load python/3.11 && pip install --user pandas numpy file_read_backwards
@@ -101,10 +93,10 @@ which python
 
 cd "$SCRIPT_DIR"
 
-echo "VIRTUAL_ENV: $VIRTUAL_ENV"
-echo "which python: $(which python)"
-python -c "import sys; print('sys.path:', sys.path)"
-python -c "import file_read_backwards; print('frb found')" 2>&1
+# echo "VIRTUAL_ENV: $VIRTUAL_ENV"
+# echo "which python: $(which python)"
+# python -c "import sys; print('sys.path:', sys.path)"
+# python -c "import file_read_backwards; print('frb found')" 2>&1
 
 python main.py \
     "$INSTANCE_NAME" \
