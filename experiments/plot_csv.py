@@ -101,7 +101,7 @@ for metric in metrics_names:
         plt.suptitle(f"Distribution raw values of {metric}", size=16)
         plt.tight_layout()
         plt.savefig(f'./figures/raw_hist_{metric}.png')
-    elif metric == "lbd" or metric == "decision_levels_span" or metric == "constraints_count" or metric == "constraints_count_recursive":
+    elif metric == "lbd" or metric == "decision_levels_span":
         for i, plot_type in enumerate(plot_types, 1):
             plt.subplot(1, 4, i)
             df_t = df_m[df_m.type == plot_type]
@@ -110,6 +110,20 @@ for metric in metrics_names:
             plt.ylabel('Frequency')
             ax = plt.gca()
             ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+
+            plt.title(plot_type)
+            plt.grid(axis='y', alpha=0.3)
+        plt.suptitle(f"Distribution raw values of {metric}", size=16)
+        plt.tight_layout()
+        plt.savefig(f'./figures/raw_hist_{metric}.png')
+    elif metric == "constraints_count" or metric == "constraints_count_recursive":
+        for i, plot_type in enumerate(plot_types, 1):
+            plt.subplot(1, 4, i)
+            df_t = df_m[df_m.type == plot_type]
+
+            plt.bar(df_t['value'], df_t['density'], width=1, color="skyblue", edgecolor="black", linewidth=0.5)
+            plt.ylabel('Frequency')
+            plt.xscale('symlog', linthresh=80)
 
             plt.title(plot_type)
             plt.grid(axis='y', alpha=0.3)
@@ -223,9 +237,9 @@ stats.to_csv(f'./figures/stats.csv', index=False)
 print(f"Stats saved to ./figures/stats.csv")
 print(stats.to_string(index=False))
 
-# fmt = f"{{:.4f}}"
-# print("\n--- LaTeX table ---\n")
-# print(to_latex(stats, float_fmt=fmt))
+fmt = f"{{:.4f}}"
+print("\n--- LaTeX table ---\n")
+print(to_latex(stats, float_fmt=fmt))
 
 # --------- 3. COMPUTE PERCENTAGE OF >= 0.5 ----------
 
