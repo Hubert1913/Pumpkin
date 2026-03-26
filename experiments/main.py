@@ -128,7 +128,8 @@ def analyze_nogood_events(instance_name: str, input_dir_path: str, output_dir_pa
     # Metric names in order as specified
     metrics_names = [
         "size", "activity", "lbd", "num_variables",
-        "decision_levels_span", "search_space_size"
+        "decision_levels_span", "search_space_size",
+        "constraints_count", "constraints_count_recursive"
     ]
 
     data = []
@@ -164,11 +165,11 @@ def analyze_nogood_events(instance_name: str, input_dir_path: str, output_dir_pa
 
                 elif parts[0] == "NogoodProp":
                     try:
-                        # Format: NogoodProp ID_1 ID_2 V B V B V B V B V B V B
+                        # Format: NogoodProp ID_1 ID_2 V B V B V B V B V B V B V B V B
                         prop_id = int(parts[1])
                         nogood_id = int(parts[2])
-                        v_vals = [float(parts[i]) for i in range(3, 15, 2)]
-                        abs_vals = [float(parts[i]) for i in range(4, 15, 2)]
+                        v_vals = [float(parts[i]) for i in range(3, 19, 2)]
+                        abs_vals = [float(parts[i]) for i in range(4, 19, 2)]
 
                         nogood_data[prop_id] = v_vals
                         nogood_abs[prop_id] = abs_vals
