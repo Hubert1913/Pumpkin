@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=nogood-metrics-optim
-#SBATCH --array=0-459
+#SBATCH --array=17,30-459
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --partition=compute-p2
@@ -83,6 +83,9 @@ echo "[$INSTANCE_NAME] Conditions met (solveTime=$SOLVE_TIME) — running Python
 # ── Step 3: Run the Python analysis script ────────────────────────────────────
 PY_STDOUT="$OUT_DIR/${INSTANCE_NAME}_stdout_python.log"
 PY_STDERR="$OUT_DIR/${INSTANCE_NAME}_stderr_python.log"
+
+source ~/venvs/nogood-metrics-venv/bin/activate
+
 
 # Verify deps are installed — if not, install them once on the login node:
 #   module load python/3.11 && pip install --user pandas numpy file_read_backwards
