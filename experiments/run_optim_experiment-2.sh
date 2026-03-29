@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH --job-name=nogood-metrics-optim
-#SBATCH --array=17,30-459
+#SBATCH --job-name=nogood-metrics-optim-2
+#SBATCH --array=0-123
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --partition=compute-p2
@@ -17,10 +17,10 @@ module load py-numpy
 module load py-pandas
 
 # ── Paths ────────────────────────────────────────────────────────────────────
-FZN_DIR="/scratch/hnowak/nogood-metrics/optim/flatzinc"
+FZN_DIR="/scratch/hnowak/nogood-metrics/optim/flatzinc-2"
 SOLVER="/scratch/hnowak/nogood-metrics/optim/Pumpkin/target/release/pumpkin-solver"
 SCRIPT_DIR="/scratch/hnowak/nogood-metrics/optim/Pumpkin/experiments"
-OUT_DIR="/scratch/hnowak/nogood-metrics/optim/outputs"
+OUT_DIR="/scratch/hnowak/nogood-metrics/optim/outputs_2"
 CSV_DIR="/scratch/hnowak/nogood-metrics/optim/out_data"
 
 # ── Setup ────────────────────────────────────────────────────────────────────
@@ -62,7 +62,7 @@ if ! grep -qF "==========" "$STDOUT_LOG"; then
     exit 0
 fi
 
-# Condition 2: extract solveTime and check it is < 30
+# Condition 2: extract solveTime and check it is < 20
 SOLVE_TIME_LINE=$(grep "^%%%mzn-stat: solveTime=" "$STDOUT_LOG" | tail -n1)
 if [[ -z "$SOLVE_TIME_LINE" ]]; then
     echo "[$INSTANCE_NAME] SKIP — solveTime line not found in stdout."
@@ -72,9 +72,9 @@ fi
 SOLVE_TIME=$(echo "$SOLVE_TIME_LINE" | sed 's/^%%%mzn-stat: solveTime=//')
 
 # Use awk for float comparison (bash cannot compare floats natively)
-PASSES=$(awk -v t="$SOLVE_TIME" 'BEGIN { print (t > 30) ? "1" : "0" }')
+PASSES=$(awk -v t="$SOLVE_TIME" 'BEGIN { print (t > 20) ? "1" : "0" }')
 if [[ "$PASSES" != "1" ]]; then
-    echo "[$INSTANCE_NAME] SKIP — solveTime=$SOLVE_TIME is not > 30."
+    echo "[$INSTANCE_NAME] SKIP — solveTime=$SOLVE_TIME is not > 20."
     exit 0
 fi
 
