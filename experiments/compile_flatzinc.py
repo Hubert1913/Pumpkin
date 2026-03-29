@@ -1,17 +1,14 @@
-import os
+import argparse
 import subprocess
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-INSTANCES_DIR = Path(r".\experiments\instances")
-FLATZINC_DIR = Path(r".\experiments\flatzinc")
-SOLVER = "minizinc/pumpkin.msc"
 MAX_WORKERS = 4
 
 
-def build_jobs():
+def build_jobs(instances_dir, flatzinc_dir):
     jobs = []
-    for subfolder in INSTANCES_DIR.iterdir():
+    for subfolder in instances_dir.iterdir():
         if not subfolder.is_dir():
             continue
 
@@ -29,17 +26,17 @@ def build_jobs():
 
         for dzn_file in dzn_files:
             output_name = f"{subfolder.name}_{dzn_file.stem}.fzn"
-            output_path = FLATZINC_DIR / output_name
+            output_path = flatzinc_dir / output_name
             jobs.append((subfolder.name, mzn_file, dzn_file, output_path))
 
     return jobs
 
 
-def run_job(job):
+def run_job(job, solver):
     subfolder_name, mzn_file, dzn_file, output_path = job
     cmd = [
         "minizinc", "-c",
-        "--solver", SOLVER,
+        "--solver", solver,
         str(mzn_file),
         str(dzn_file),
         "--output-to-file", str(output_path),
@@ -66,9 +63,18 @@ def run_job(job):
 
 
 def main():
-    FLATZINC_DIR.mkdir(parents=True, exist_ok=True)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("instances_dir", type=str, help="Path to directory containing instances")
+    parser.add_argument("flatzinc_dir", type=str, help="Path to directory for output .fzn files")
+    parser.add_argument("solver_path", type=str, help="Path to solver .msc file")
+    args = parser.parse_args()
 
-    jobs = build_jobs()
+    instances_dir = Path(args.instances_dir)
+    flatzinc_dir = Path(args.flatzinc_dir)
+
+    flatzinc_dir.mkdir(parents=True, exist_ok=True)
+
+    jobs = build_jobs(instances_dir, flatzinc_dir)
     if not jobs:
         print("No jobs found. Check that your instances directory exists and is populated.")
         return
@@ -77,7 +83,7 @@ def main():
 
     success, failure = 0, 0
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {executor.submit(run_job, job): job for job in jobs}
+        futures = {executor.submit(run_job, job, args.solver_path): job for job in jobs}
         for future in as_completed(futures):
             if future.result():
                 success += 1
