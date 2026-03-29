@@ -1,3 +1,4 @@
+import argparse
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -5,9 +6,15 @@ from matplotlib.ticker import MaxNLocator
 import glob
 import matplotlib.ticker as mticker
 
-files = glob.glob(r".\out_data\data_*.csv")
+parser = argparse.ArgumentParser()
+parser.add_argument("input_dir", type=str, help="Path to directory containing input .csv files")
+parser.add_argument("output_dir", type=str, help="Path to directory for output figures")
+parser.add_argument("--print_latex", type=bool, default=False, help="If latex table of statistics should dbe printed")
+args = parser.parse_args()
 
-files_raw = glob.glob(r".\out_data\raw_data_*.csv")
+files = glob.glob(fr"{args.input_dir}\data_*.csv")
+
+files_raw = glob.glob(fr"{args.input_dir}\raw_data_*.csv")
 
 dfs = [pd.read_csv(f) for f in files]
 dfs_raw = [pd.read_csv(f) for f in files_raw]
@@ -56,7 +63,7 @@ for metric in metrics_names:
 
     plt.suptitle(f"Distribution of {metric}", size=16)
     plt.tight_layout()
-    plt.savefig(f'./figures/hist_{metric}.png')
+    plt.savefig(f'{args.output_dir}/hist_{metric}.png')
 
 for metric in metrics_names:
     df_m = df_combined_raw[df_combined_raw.metric == metric]
@@ -81,7 +88,7 @@ for metric in metrics_names:
 
         plt.suptitle(f"Distribution raw values of {metric}", size=16)
         plt.tight_layout()
-        plt.savefig(f'./figures/raw_hist_{metric}.png')
+        plt.savefig(f'{args.output_dir}/raw_hist_{metric}.png')
     elif metric == "activity":
         for i, plot_type in enumerate(plot_types, 1):
             plt.subplot(1, 4, i)
@@ -100,7 +107,7 @@ for metric in metrics_names:
             plt.grid(axis='y', alpha=0.3)
         plt.suptitle(f"Distribution raw values of {metric}", size=16)
         plt.tight_layout()
-        plt.savefig(f'./figures/raw_hist_{metric}.png')
+        plt.savefig(f'{args.output_dir}/raw_hist_{metric}.png')
     elif metric == "lbd" or metric == "decision_levels_span":
         for i, plot_type in enumerate(plot_types, 1):
             plt.subplot(1, 4, i)
@@ -115,7 +122,7 @@ for metric in metrics_names:
             plt.grid(axis='y', alpha=0.3)
         plt.suptitle(f"Distribution raw values of {metric}", size=16)
         plt.tight_layout()
-        plt.savefig(f'./figures/raw_hist_{metric}.png')
+        plt.savefig(f'{args.output_dir}/raw_hist_{metric}.png')
     elif metric == "constraints_count" or metric == "constraints_count_recursive":
         for i, plot_type in enumerate(plot_types, 1):
             plt.subplot(1, 4, i)
@@ -129,7 +136,7 @@ for metric in metrics_names:
             plt.grid(axis='y', alpha=0.3)
         plt.suptitle(f"Distribution raw values of {metric}", size=16)
         plt.tight_layout()
-        plt.savefig(f'./figures/raw_hist_{metric}.png')
+        plt.savefig(f'{args.output_dir}/raw_hist_{metric}.png')
     else:
         for i, plot_type in enumerate(plot_types, 1):
             plt.subplot(1, 4, i)
@@ -143,7 +150,7 @@ for metric in metrics_names:
             plt.grid(axis='y', alpha=0.3)
         plt.suptitle(f"Distribution raw values of {metric}", size=16)
         plt.tight_layout()
-        plt.savefig(f'./figures/raw_hist_{metric}.png')
+        plt.savefig(f'{args.output_dir}/raw_hist_{metric}.png')
 
 
 # --------- 2. COMPUTE STATS FROM HISTOGRAMS ----------
@@ -209,9 +216,11 @@ def to_latex(stats: pd.DataFrame, float_fmt: str = "{:.4f}") -> str:
         r"\midrule",
     ]
 
-    for t, group in stats.groupby("type", sort=False):
+    for t in plot_types:
+        group = stats[stats.type == t]
         first = True
-        for _, row in group.iterrows():
+        for m in metrics_names:
+            row = group[group.metric == m].iloc[0]
             type_cell = t if first else ""
             first = False
             mean_s = float_fmt.format(row["mean"])
@@ -233,13 +242,14 @@ def to_latex(stats: pd.DataFrame, float_fmt: str = "{:.4f}") -> str:
 
 stats = compute_stats(df_combined)
 
-stats.to_csv(f'./figures/stats.csv', index=False)
-print(f"Stats saved to ./figures/stats.csv")
+stats.to_csv(f'{args.output_dir}/stats.csv', index=False)
+print(f"Stats saved to {args.output_dir}/stats.csv")
 print(stats.to_string(index=False))
 
-fmt = f"{{:.4f}}"
-print("\n--- LaTeX table ---\n")
-print(to_latex(stats, float_fmt=fmt))
+if args.print_latex:
+    fmt = f"{{:.4f}}"
+    print("\n--- LaTeX table ---\n")
+    print(to_latex(stats, float_fmt=fmt))
 
 # --------- 3. COMPUTE PERCENTAGE OF >= 0.5 ----------
 
@@ -326,4 +336,4 @@ def plot(df: pd.DataFrame, output_path: str) -> None:
     print(f"Saved to {output_path}")
 
 
-plot(df_combined, output_path="./figures/percentages.png")
+plot(df_combined, output_path=f"{args.output_dir}/percentages.png")
