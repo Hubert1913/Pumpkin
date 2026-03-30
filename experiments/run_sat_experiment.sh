@@ -57,7 +57,7 @@ STDERR_LOG="$OUT_DIR/${INSTANCE_NAME}_stderr.log"
 # ── Step 2: Check stdout conditions ──────────────────────────────────────────
 
 # Condition 1: the "----------" or "UNSATISFIABLE" separator must be present
-HAS_DASHES=$(grep -qF "----------" "$STDOUT_LOG" && echo "1" || echo "0")
+HAS_DASHES=$(grep -q -- "----------" "$STDOUT_LOG" && echo "1" || echo "0")
 HAS_UNSAT=$(grep -qF "UNSATISFIABLE" "$STDOUT_LOG" && echo "1" || echo "0")
 
 if [[ "$HAS_DASHES" != "1" && "$HAS_UNSAT" != "1" ]]; then
