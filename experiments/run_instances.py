@@ -166,6 +166,7 @@ def main() -> None:
         return
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(OUT_CSV_DIR, exist_ok=True)
 
     print(f"Found {len(fzn_files)} .fzn file(s). Running with {MAX_WORKERS} workers.\n")
 

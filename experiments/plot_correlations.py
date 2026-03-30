@@ -9,7 +9,7 @@ Usage:
     python plot_correlations.py --inputs corr1.csv corr2.csv corr3.csv --output_dir ./plots
     python plot_correlations.py --inputs_glob "./results/corr_*.csv" --output_dir ./plots
 """
-
+import argparse
 import glob
 import os
 import numpy as np
@@ -98,8 +98,13 @@ def plot_heatmap(ax: plt.Axes, matrix: pd.DataFrame, title: str) -> None:
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 def main():
-    paths = glob.glob(r"./out_data/corr_*.csv")
-    out_dir = "./figures/"
+    parser = argparse.ArgumentParser()
+    parser.add_argument("input_dir", type=str, help="Path to directory containing input .csv files")
+    parser.add_argument("output_dir", type=str, help="Path to directory for output figure")
+    args = parser.parse_args()
+
+    paths = glob.glob(fr"{args.input_dir}/corr_*.csv")
+    out_dir = f"{args.output_dir}/"
     out_path = out_dir + "correlation_heatmaps.png"
 
     print(f"Loading {len(paths)} file(s)...")

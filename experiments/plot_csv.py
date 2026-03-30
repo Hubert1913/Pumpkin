@@ -1,4 +1,6 @@
 import argparse
+import os
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -47,6 +49,8 @@ metrics_names = [
 ]
 
 plot_types = ["unweighted", "conflict", "proof", "useful_proof"]
+
+os.makedirs(args.output_dir, exist_ok=True)
 
 for metric in metrics_names:
     df_m = df_combined[df_combined.metric == metric]
