@@ -112,7 +112,7 @@ def parse_full_proof_file(full_proof_path: str) -> (dict, dict):
     return used_count_in_proof, nogood_inferences_in_proof
 
 
-def analyze_nogood_events(instance_name: str, input_dir_path: str, output_dir_path: str):
+def analyze_nogood_events(instance_name: str, input_dir_path: str, output_dir_path: str, sat: bool):
     file_path = f"{input_dir_path}/{instance_name}_stats.txt"
     full_proof_path = f"{input_dir_path}/{instance_name}_proof_full.drcp"
     # processed_proof_path = f"experiments/outputs/{instance_name}_proof_full_processed.drcp"
@@ -122,7 +122,8 @@ def analyze_nogood_events(instance_name: str, input_dir_path: str, output_dir_pa
     correlation_csv_path = f"{output_dir_path}/corr_{instance_name}.csv"
 
     # used_nogood_ids = find_nogood_ids_from_processed_proof(processed_proof_path)
-    used_count_in_proof, nogood_inferences_in_proof = parse_full_proof_file(full_proof_path)
+    if not sat:
+        used_count_in_proof, nogood_inferences_in_proof = parse_full_proof_file(full_proof_path)
     # used_count_in_proof, nogood_inferences_in_proof = parse_full_proof_file(full_proof_path, used_nogood_ids)
 
     # Metric names in order as specified
@@ -196,21 +197,23 @@ def analyze_nogood_events(instance_name: str, input_dir_path: str, output_dir_pa
 
     raw_rows_for_csv = []
 
-    average_inferences_from_nogood_in_proof = sum(nogood_inferences_in_proof.values()) / len(nogood_inferences_in_proof)
+    if not sat:
+        average_inferences_from_nogood_in_proof = sum(nogood_inferences_in_proof.values()) / len(nogood_inferences_in_proof)
 
-    print(f"Each nogood produced on average {average_inferences_from_nogood_in_proof} inferences in proof")
+        print(f"Each nogood produced on average {average_inferences_from_nogood_in_proof} inferences in proof")
 
     for prop_id in all_prop_ids:
         data.append(nogood_data[prop_id])
         abs_data.append(nogood_abs[prop_id])
         conflict_weights.append(prop_in_confl_count.get(prop_id, 0))
-        proof_weight = used_count_in_proof.get(prop_id, 0)
-        proof_weights.append(proof_weight)
-        useful_proof_weights.append(
-            proof_weight
-            if nogood_inferences_in_proof[prop_id_to_nogood_id_map[prop_id]] > average_inferences_from_nogood_in_proof
-            else 0
-        )
+        if not sat:
+            proof_weight = used_count_in_proof.get(prop_id, 0)
+            proof_weights.append(proof_weight)
+            useful_proof_weights.append(
+                proof_weight
+                if nogood_inferences_in_proof[prop_id_to_nogood_id_map[prop_id]] > average_inferences_from_nogood_in_proof
+                else 0
+            )
 
     # Create DataFrames for analysis
     df_metrics = pd.DataFrame(data, columns=metrics_names)
@@ -219,11 +222,12 @@ def analyze_nogood_events(instance_name: str, input_dir_path: str, output_dir_pa
     df_metrics["conflict_weights"] = conflict_weights
     df_abs["conflict_weights"] = conflict_weights
 
-    df_metrics["proof_weights"] = proof_weights
-    df_abs["proof_weights"] = proof_weights
+    if not sat:
+        df_metrics["proof_weights"] = proof_weights
+        df_abs["proof_weights"] = proof_weights
 
-    df_metrics["useful_proof_weights"] = useful_proof_weights
-    df_abs["useful_proof_weights"] = useful_proof_weights
+        df_metrics["useful_proof_weights"] = useful_proof_weights
+        df_abs["useful_proof_weights"] = useful_proof_weights
 
     # --- 1. Plots for unweighted data ---
     for col in metrics_names:
@@ -346,156 +350,135 @@ def analyze_nogood_events(instance_name: str, input_dir_path: str, output_dir_pa
                     "density": weight_sum / total_weight
                 })
 
-    # --- 3. Plots for weighted according to proof usage ---
-    for col in metrics_names:
-        density, _ = np.histogram(
-            df_metrics[col],
-            bins=bins,
-            density=True,
-            weights=df_metrics["proof_weights"]
-        )
-
-        for i, d in enumerate(density):
-            rows_for_csv.append({
-                "type": "proof",
-                "metric": col,
-                "bin": i,
-                "bin_center": bin_centers[i],
-                "density": d
-            })
-
-    for col in metrics_names:
-        total_weight = df_abs["proof_weights"].sum()
-        if col == "search_space_size":
-            clipped = df_abs[col].clip(lower=bins_log_search_space_size[0])
+    if not sat:
+        # --- 3. Plots for weighted according to proof usage ---
+        for col in metrics_names:
             density, _ = np.histogram(
-                clipped,
-                bins=bins_log_search_space_size,
-                density=False,
-                weights=df_abs["proof_weights"]
+                df_metrics[col],
+                bins=bins,
+                density=True,
+                weights=df_metrics["proof_weights"]
             )
 
             for i, d in enumerate(density):
-                raw_rows_for_csv.append({
+                rows_for_csv.append({
                     "type": "proof",
                     "metric": col,
-                    "value": bin_centers_log_search_space_size[i],
-                    "density": d / total_weight
+                    "bin": i,
+                    "bin_center": bin_centers[i],
+                    "density": d
                 })
-        elif col == "activity":
-            clipped = df_abs[col].clip(lower=bins_log[0])
+
+        for col in metrics_names:
+            total_weight = df_abs["proof_weights"].sum()
+            if col == "search_space_size":
+                clipped = df_abs[col].clip(lower=bins_log_search_space_size[0])
+                density, _ = np.histogram(
+                    clipped,
+                    bins=bins_log_search_space_size,
+                    density=False,
+                    weights=df_abs["proof_weights"]
+                )
+
+                for i, d in enumerate(density):
+                    raw_rows_for_csv.append({
+                        "type": "proof",
+                        "metric": col,
+                        "value": bin_centers_log_search_space_size[i],
+                        "density": d / total_weight
+                    })
+            elif col == "activity":
+                clipped = df_abs[col].clip(lower=bins_log[0])
+                density, _ = np.histogram(
+                    clipped,
+                    bins=bins_log,
+                    density=False,
+                    weights=df_abs["proof_weights"]
+                )
+
+                for i, d in enumerate(density):
+                    raw_rows_for_csv.append({
+                        "type": "proof",
+                        "metric": col,
+                        "value": bin_centers_log[i],
+                        "density": d / total_weight
+                    })
+            else:
+                weighted_counts = df_abs.groupby(col)["proof_weights"].sum()
+                for value, weight_sum in weighted_counts.items():
+                    raw_rows_for_csv.append({
+                        "type": "proof",
+                        "metric": col,
+                        "value": value,
+                        "density": weight_sum / total_weight
+                    })
+
+        for col in metrics_names:
             density, _ = np.histogram(
-                clipped,
-                bins=bins_log,
-                density=False,
-                weights=df_abs["proof_weights"]
+                df_metrics[col],
+                bins=bins,
+                density=True,
+                weights=df_metrics["useful_proof_weights"]
             )
 
             for i, d in enumerate(density):
-                raw_rows_for_csv.append({
-                    "type": "proof",
-                    "metric": col,
-                    "value": bin_centers_log[i],
-                    "density": d / total_weight
-                })
-        else:
-            weighted_counts = df_abs.groupby(col)["proof_weights"].sum()
-            for value, weight_sum in weighted_counts.items():
-                raw_rows_for_csv.append({
-                    "type": "proof",
-                    "metric": col,
-                    "value": value,
-                    "density": weight_sum / total_weight
-                })
-
-    for col in metrics_names:
-        density, _ = np.histogram(
-            df_metrics[col],
-            bins=bins,
-            density=True,
-            weights=df_metrics["useful_proof_weights"]
-        )
-
-        for i, d in enumerate(density):
-            rows_for_csv.append({
-                "type": "useful_proof",
-                "metric": col,
-                "bin": i,
-                "bin_center": bin_centers[i],
-                "density": d
-            })
-
-    for col in metrics_names:
-        total_weight = df_abs["useful_proof_weights"].sum()
-        if col == "search_space_size":
-            clipped = df_abs[col].clip(lower=bins_log_search_space_size[0])
-            density, _ = np.histogram(
-                clipped,
-                bins=bins_log_search_space_size,
-                density=False,
-                weights=df_abs["useful_proof_weights"]
-            )
-
-            for i, d in enumerate(density):
-                raw_rows_for_csv.append({
+                rows_for_csv.append({
                     "type": "useful_proof",
                     "metric": col,
-                    "value": bin_centers_log_search_space_size[i],
-                    "density": d / total_weight
+                    "bin": i,
+                    "bin_center": bin_centers[i],
+                    "density": d
                 })
-        elif col == "activity":
-            clipped = df_abs[col].clip(lower=bins_log[0])
-            density, _ = np.histogram(
-                clipped,
-                bins=bins_log,
-                density=False,
-                weights=df_abs["useful_proof_weights"]
-            )
 
-            for i, d in enumerate(density):
-                raw_rows_for_csv.append({
-                    "type": "useful_proof",
-                    "metric": col,
-                    "value": bin_centers_log[i],
-                    "density": d / total_weight
-                })
-        else:
-            weighted_counts = df_abs.groupby(col)["useful_proof_weights"].sum()
-            for value, weight_sum in weighted_counts.items():
-                raw_rows_for_csv.append({
-                    "type": "useful_proof",
-                    "metric": col,
-                    "value": value,
-                    "density": weight_sum / total_weight
-                })
+        for col in metrics_names:
+            total_weight = df_abs["useful_proof_weights"].sum()
+            if col == "search_space_size":
+                clipped = df_abs[col].clip(lower=bins_log_search_space_size[0])
+                density, _ = np.histogram(
+                    clipped,
+                    bins=bins_log_search_space_size,
+                    density=False,
+                    weights=df_abs["useful_proof_weights"]
+                )
+
+                for i, d in enumerate(density):
+                    raw_rows_for_csv.append({
+                        "type": "useful_proof",
+                        "metric": col,
+                        "value": bin_centers_log_search_space_size[i],
+                        "density": d / total_weight
+                    })
+            elif col == "activity":
+                clipped = df_abs[col].clip(lower=bins_log[0])
+                density, _ = np.histogram(
+                    clipped,
+                    bins=bins_log,
+                    density=False,
+                    weights=df_abs["useful_proof_weights"]
+                )
+
+                for i, d in enumerate(density):
+                    raw_rows_for_csv.append({
+                        "type": "useful_proof",
+                        "metric": col,
+                        "value": bin_centers_log[i],
+                        "density": d / total_weight
+                    })
+            else:
+                weighted_counts = df_abs.groupby(col)["useful_proof_weights"].sum()
+                for value, weight_sum in weighted_counts.items():
+                    raw_rows_for_csv.append({
+                        "type": "useful_proof",
+                        "metric": col,
+                        "value": value,
+                        "density": weight_sum / total_weight
+                    })
 
     df_csv = pd.DataFrame(rows_for_csv)
     df_csv.to_csv(csv_data_path, index=False)
 
     df_csv_raw = pd.DataFrame(raw_rows_for_csv)
     df_csv_raw.to_csv(csv_raw_data_path, index=False)
-
-    # --- 0. Boolean Percentage Analysis ---
-    # plt.figure(figsize=(12, 6))
-    # bool_perc = df_bools.mean() * 100
-    #
-    # ax = sns.barplot(x=bool_perc.index, y=bool_perc.values, palette='viridis')
-    # plt.title('Percentage of propagations where nogood is from the \'better\' half of all nogoods')
-    # plt.ylabel('Frequency')
-    # plt.xlabel('Metric Name')
-    # plt.xticks(rotation=30)
-    # plt.ylim(0, 105)
-    #
-    # # Add percentage labels on top of the bars
-    # for p in ax.patches:
-    #     ax.annotate(f'{p.get_height():.1f}%',
-    #                 (p.get_x() + p.get_width() / 2., p.get_height()),
-    #                 ha='center', va='center', xytext=(0, 9),
-    #                 textcoords='offset points')
-    #
-    # plt.tight_layout()
-    # plt.savefig('boolean_percentages_3.png')
-    # print("Graph saved: 'boolean_percentages_2.png'")
 
     # --- 4. Correlation calculation ---
     print("Calculating correlations...")
@@ -506,7 +489,10 @@ def analyze_nogood_events(instance_name: str, input_dir_path: str, output_dir_pa
     INVERT_COLS = ["activity", "search_space_size"]
 
     # The 3 weight columns
-    WEIGHT_COLS = ["conflict_weights", "proof_weights", "useful_proof_weights"]
+    if not sat:
+        WEIGHT_COLS = ["conflict_weights", "proof_weights", "useful_proof_weights"]
+    else:
+        WEIGHT_COLS = ["conflict_weights"]
 
     # Apply 1-x transform
     df = df_metrics.copy()
@@ -555,5 +541,6 @@ parser = argparse.ArgumentParser()
 parser.add_argument("instance_name", type=str, help="Name of the instance to analyze")
 parser.add_argument("input_dir_path", type=str, help="Path to directory containing input .drc and .txt files")
 parser.add_argument("output_dir_path", type=str, help="Path to directory where the resulting.csv files should be stored")
+parser.add_argument("--sat", type=bool, default=False, help="If the instance was satisfiable (no proof)")
 args = parser.parse_args()
-analyze_nogood_events(args.instance_name, args.input_dir_path, args.output_dir_path)
+analyze_nogood_events(args.instance_name, args.input_dir_path, args.output_dir_path, args.sat)
