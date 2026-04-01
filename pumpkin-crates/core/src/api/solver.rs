@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use super::outputs::Satisfiable;
 use super::outputs::SolutionReference;
 use super::results::OptimisationResult;
@@ -97,6 +99,7 @@ pub struct Solver {
     /// The internal [`ConstraintSatisfactionSolver`] which is used to solve the problems.
     pub(crate) satisfaction_solver: ConstraintSatisfactionSolver,
     true_literal: Literal,
+    unnamed_count: u32,
 }
 
 impl Default for Solver {
@@ -106,6 +109,7 @@ impl Default for Solver {
         Self {
             satisfaction_solver,
             true_literal,
+            unnamed_count: 0,
         }
     }
 }
@@ -118,6 +122,7 @@ impl Solver {
         Self {
             satisfaction_solver,
             true_literal,
+            unnamed_count: 0,
         }
     }
 
@@ -213,7 +218,9 @@ impl Solver {
     /// let literal = solver.new_literal();
     /// ```
     pub fn new_literal(&mut self) -> Literal {
-        self.satisfaction_solver.create_new_literal(None)
+        self.unnamed_count += 1;
+        self.satisfaction_solver
+            .create_new_literal(Some(Arc::from(self.unnamed_count.to_string())))
     }
 
     pub fn new_literal_for_predicate(
@@ -221,8 +228,12 @@ impl Solver {
         predicate: Predicate,
         constraint_tag: ConstraintTag,
     ) -> Literal {
-        self.satisfaction_solver
-            .create_new_literal_for_predicate(predicate, None, constraint_tag)
+        self.unnamed_count += 1;
+        self.satisfaction_solver.create_new_literal_for_predicate(
+            predicate,
+            Some(Arc::from(self.unnamed_count.to_string())),
+            constraint_tag,
+        )
     }
 
     pub fn new_named_literal_for_predicate(
@@ -276,8 +287,12 @@ impl Solver {
     /// let integer_between_bounds = solver.new_bounded_integer(0, 10);
     /// ```
     pub fn new_bounded_integer(&mut self, lower_bound: i32, upper_bound: i32) -> DomainId {
-        self.satisfaction_solver
-            .create_new_integer_variable(lower_bound, upper_bound, None)
+        self.unnamed_count += 1;
+        self.satisfaction_solver.create_new_integer_variable(
+            lower_bound,
+            upper_bound,
+            Some(Arc::from(self.unnamed_count.to_string())),
+        )
     }
 
     /// Create a new named integer variable with the given bounds.
@@ -317,9 +332,12 @@ impl Solver {
     /// ```
     pub fn new_sparse_integer(&mut self, values: impl Into<Vec<i32>>) -> DomainId {
         let values: HashSet<i32> = values.into().into_iter().collect();
+        self.unnamed_count += 1;
 
-        self.satisfaction_solver
-            .create_new_integer_variable_sparse(values.into_iter().collect(), None)
+        self.satisfaction_solver.create_new_integer_variable_sparse(
+            values.into_iter().collect(),
+            Some(self.unnamed_count.to_string()),
+        )
     }
 
     /// Create a new named integer variable which has a domain of predefined values.
