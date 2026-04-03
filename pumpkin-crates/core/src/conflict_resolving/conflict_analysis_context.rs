@@ -9,6 +9,7 @@ use crate::branching::branchers::autonomous_search::AutonomousSearch;
 use crate::conflict_resolving::ConflictResolver;
 use crate::conflict_resolving::LearnedNogood;
 use crate::containers::HashMap;
+use crate::containers::HashSet;
 use crate::engine::Assignments;
 use crate::engine::ConstraintSatisfactionSolver;
 use crate::engine::EmptyDomainConflict;
@@ -88,9 +89,16 @@ impl ConflictAnalysisContext<'_> {
 
     /// Returns a nogood which led to the conflict, excluding predicates from the root decision
     /// level.
-    pub fn get_conflict_nogood(&mut self) -> Vec<Predicate> {
+    pub fn get_conflict_nogood(
+        &mut self, 
+        mut constraint_tags_set: Option<&mut HashSet<ConstraintTag>>
+    ) -> Vec<Predicate> {
         let conflict_nogood = match self.solver_state.get_conflict_info() {
             StoredConflictInfo::Propagator(conflict) => {
+                if let Some(tags_set) = constraint_tags_set.as_mut() {
+                    let _ = tags_set.insert(conflict.inference_code.tag());
+                }
+
                 let _ = self.proof_log.log_inference(
                     &mut self.state.constraint_tags,
                     conflict.inference_code,
@@ -125,6 +133,7 @@ impl ConflictAnalysisContext<'_> {
                         state: self.state,
                     },
                     predicate,
+                    &mut constraint_tags_set,
                 );
             }
         }
@@ -144,6 +153,7 @@ impl ConflictAnalysisContext<'_> {
         predicate: Predicate,
         current_nogood: CurrentNogood<'_>,
         reason_buffer: &mut (impl Extend<Predicate> + AsRef<[Predicate]>),
+        mut constraint_tags_set: Option<&mut HashSet<ConstraintTag>>,
     ) {
         Self::get_propagation_reason_inner(
             predicate,
@@ -152,6 +162,7 @@ impl ConflictAnalysisContext<'_> {
             self.unit_nogood_inference_codes,
             reason_buffer,
             self.state,
+            &mut constraint_tags_set,
         );
     }
 
@@ -172,6 +183,7 @@ impl ConflictAnalysisContext<'_> {
                 state: self.state,
             },
             predicate,
+            &mut None,
         );
     }
 
@@ -212,6 +224,7 @@ impl ConflictAnalysisContext<'_> {
         &mut self,
         learned_nogood_predicates: Vec<Predicate>,
         lbd: u32,
+        used_constraint_tags: HashSet<ConstraintTag>,
     ) -> usize {
         // important to notify about the conflict _before_ backtracking removes literals from
         // the trail -> although in the current version this does nothing but notify that a
@@ -252,6 +265,7 @@ impl ConflictAnalysisContext<'_> {
             learned_nogood.to_vec(),
             inference_code,
             &mut propagation_context,
+            used_constraint_tags,
         );
 
         #[cfg(feature = "check-propagations")]
@@ -271,8 +285,15 @@ impl ConflictAnalysisContext<'_> {
         unit_nogood_inference_codes: &HashMap<Predicate, InferenceCode>,
         reason_buffer: &mut (impl Extend<Predicate> + AsRef<[Predicate]>),
         state: &mut State,
+        constraint_tags_set: &mut Option<&mut HashSet<ConstraintTag>>,
     ) {
         let inference_code = state.get_propagation_reason(predicate, reason_buffer, current_nogood);
+
+        if let Some(tags_set) = constraint_tags_set.as_mut()
+            && let Some(ref inf_code) = inference_code
+        {
+            let _ = tags_set.insert(inf_code.tag());
+        }
 
         if inference_code.is_some() {
             let trail_index = state.trail_position(predicate).expect(

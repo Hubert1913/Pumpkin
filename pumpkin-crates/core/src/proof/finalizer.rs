@@ -12,6 +12,7 @@ use crate::containers::HashSet;
 use crate::engine::State;
 use crate::predicates::Predicate;
 use crate::predicates::PropositionalConjunction;
+use crate::proof::ConstraintTag;
 use crate::propagation::CurrentNogood;
 
 pub(crate) struct FinalizingContext<'a> {
@@ -48,6 +49,7 @@ pub(crate) fn finalize_proof(context: FinalizingContext<'_>) {
             state: context.state,
         },
         to_explain,
+        &mut None,
     );
 
     let _ = context.proof_log.log_deduction(
@@ -61,6 +63,7 @@ pub(crate) fn finalize_proof(context: FinalizingContext<'_>) {
 fn finalize_proof_impl(
     context: &mut RootExplanationContext<'_>,
     mut to_explain: BTreeMap<usize, HashSet<Predicate>>,
+    mut constraint_tags_set: &mut Option<&mut HashSet<ConstraintTag>>,
 ) -> Vec<Predicate> {
     let mut required_assumptions = vec![];
 
@@ -89,6 +92,9 @@ fn finalize_proof_impl(
 
             // If the predicate is a unit-nogood, we explain the root-level assignment.
             if let Some(inference_code) = context.unit_nogood_inference_codes.get(&predicate) {
+                if let Some(tags_set) = constraint_tags_set.as_mut() {
+                    let _ = tags_set.insert(inference_code.tag());
+                }
                 let _ = context.proof_log.log_inference(
                     &mut context.state.constraint_tags,
                     inference_code.clone(),
@@ -109,6 +115,7 @@ fn finalize_proof_impl(
                 context.unit_nogood_inference_codes,
                 &mut reason,
                 context.state,
+                &mut constraint_tags_set,
             );
 
             // Look for the reasons of the propagation premise.
@@ -139,6 +146,7 @@ pub(crate) struct RootExplanationContext<'a> {
 pub(crate) fn explain_root_assignment(
     context: &mut RootExplanationContext<'_>,
     predicate: Predicate,
+    constraint_tags_set: &mut Option<&mut HashSet<ConstraintTag>>,
 ) {
     assert_eq!(
         context.state.get_checkpoint_for_predicate(predicate),
@@ -157,5 +165,5 @@ pub(crate) fn explain_root_assignment(
         [predicate].into_iter().collect(),
     )]);
 
-    let _ = finalize_proof_impl(context, to_explain);
+    let _ = finalize_proof_impl(context, to_explain, constraint_tags_set);
 }

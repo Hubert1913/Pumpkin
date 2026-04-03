@@ -1,0 +1,10 @@
+venv
+*.txt
+*.png
+*.drcp
+*.csv
+*.log
+*.ozn
+*.fzn
+*.mzn
+*.dzn

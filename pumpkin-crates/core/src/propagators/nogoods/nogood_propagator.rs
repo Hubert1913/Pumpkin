@@ -10,6 +10,7 @@ use crate::basic_types::PredicateId;
 use crate::basic_types::PropagationStatusCP;
 use crate::basic_types::PropagatorConflict;
 use crate::basic_types::PropositionalConjunction;
+use crate::containers::HashSet;
 use crate::containers::KeyedVec;
 use crate::containers::StorageKey;
 use crate::engine::Assignments;
@@ -38,6 +39,8 @@ use crate::pumpkin_assert_moderate;
 use crate::pumpkin_assert_simple;
 use crate::state::Conflict;
 use crate::state::PropagatorHandle;
+use crate::containers::HashMap;
+use crate::proof::ConstraintTag;
 
 /// A propagator which propagates nogoods (i.e. a list of [`Predicate`]s which cannot all be true
 /// at the same time).
@@ -78,6 +81,10 @@ pub struct NogoodPropagator {
     /// current subtree. To test for that, we compare this handle with the propagator ID of a
     /// proapgated literal to see if this propagator propagated a predicate.
     handle: PropagatorHandle<NogoodPropagator>,
+    /// A map from a given nogoods ConstraintTag to list of ConstraintTags of (initial) constraints
+    /// that were used to derive it.
+    /// It takes into the account that nogoods can be used to derive other nogoods.
+    nogood_constraints_map: HashMap<ConstraintTag, Vec<ConstraintTag>>,
 }
 
 /// [`PropagatorConstructor`] for constructing a new instance of the [`NogoodPropagator`] with the
@@ -116,6 +123,7 @@ impl PropagatorConstructor for NogoodPropagatorConstructor {
             lbd_helper: Default::default(),
             bumped_nogoods: Default::default(),
             temp_nogood_reason: Default::default(),
+            nogood_constraints_map: Default::default(),
         }
     }
 }
@@ -431,7 +439,25 @@ impl NogoodPropagator {
         nogood: Vec<Predicate>,
         inference_code: InferenceCode,
         context: &mut PropagationContext,
+        used_constraint_tags: HashSet<ConstraintTag>,
     ) {
+        let mut processed_cons_tags: HashSet<ConstraintTag> = HashSet::default();
+
+        for used_cons_tag in &used_constraint_tags {
+            if let Some(cons_tags) = self.nogood_constraints_map.get(used_cons_tag) {
+                processed_cons_tags.extend(cons_tags);
+            } else {
+                let _ = processed_cons_tags.insert(*used_cons_tag);
+            }
+        }
+
+        let processed_cons_tags_len = processed_cons_tags.len() as u32;
+
+        let _ = self.nogood_constraints_map.insert(
+            inference_code.tag(),
+            processed_cons_tags.into_iter().collect::<Vec<_>>(),
+        );
+
         // We treat unit nogoods in a special way by adding it as a permanent nogood at the
         // root-level; this is essentially the same as adding a predicate at the root level
         if nogood.len() == 1 {
@@ -450,6 +476,12 @@ impl NogoodPropagator {
             .lbd_helper
             .compute_lbd(&nogood.as_slice()[1..], context);
 
+        let used_variables = nogood
+            .iter()
+            .map(|&n| n.get_domain())
+            .collect::<HashSet<_>>();
+        let num_variables = used_variables.len() as u32;
+
         let nogood = nogood
             .iter()
             .map(|predicate| context.get_id(*predicate))
@@ -461,7 +493,7 @@ impl NogoodPropagator {
         let nogood_id = self.nogood_predicates.insert(nogood);
         let _ = self
             .nogood_info
-            .push(NogoodInfo::new_learned_nogood_info(lbd));
+            .push(NogoodInfo::new_learned_nogood_info(lbd, num_variables, processed_cons_tags_len));
         let _ = self.inference_codes.push(inference_code);
 
         let watcher = Watcher {

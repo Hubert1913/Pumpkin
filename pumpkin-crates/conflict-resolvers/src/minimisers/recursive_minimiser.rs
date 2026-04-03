@@ -127,6 +127,7 @@ impl RecursiveMinimiser {
             input_predicate,
             CurrentNogood::from(current_nogood),
             &mut reason,
+            None,
         );
 
         for antecedent_predicate in reason.iter().copied() {
