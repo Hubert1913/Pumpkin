@@ -35,6 +35,8 @@ use pumpkin_solver::core::convert_case::Case;
 use pumpkin_solver::core::optimisation::OptimisationStrategy;
 use pumpkin_solver::core::options::*;
 use pumpkin_solver::core::proof::ProofLog;
+use pumpkin_solver::core::propagators::nogoods::NogoodDeletionMethod;
+use pumpkin_solver::core::propagators::nogoods::NogoodOrderingMetric;
 use pumpkin_solver::core::pumpkin_assert_simple;
 use pumpkin_solver::core::rand::SeedableRng;
 use pumpkin_solver::core::rand::rngs::SmallRng;
@@ -89,77 +91,38 @@ struct Args {
     #[arg(long, value_enum, default_value_t)]
     proof_type: ProofType,
 
-    /// The number of high-lbd learned nogoods that are kept in the database.
-    ///
-    /// Learned nogoods are kept based on the tiered system introduced in "Improving
-    /// SAT Solvers by Exploiting Empirical Characteristics of CDCL - Chanseok Oh (2016)".
+    /// What scheme should be used for deleting nogoods (only one metric or two metrics)
+    #[arg(long, value_enum, default_value_t)]
+    nogood_deletion_method: NogoodDeletionMethod,
+
+    /// The first metric for ordering nogoods for removal
+    #[arg(long = "first-nogood-metric", value_enum, default_value_t)]
+    first_nogood_ordering_metric: NogoodOrderingMetric,
+
+    /// The second metric for ordering nogoods (needs to be provided if we use two metrics)
+    #[arg(long = "second-nogood-metric", value_enum, default_value_t)]
+    second_nogood_ordering_metric: NogoodOrderingMetric,
+
+    /// The number of learned nogoods that are initially kept in the database
     ///
     /// Possible values: usize
     #[arg(
-        long = "learning-max-num-high-lbd-nogoods",
-        default_value_t = 20_000,
+        long = "learning-max-num-nogoods",
+        default_value_t = 40_000,
         verbatim_doc_comment
     )]
-    learning_max_num_high_lbd_nogoods: usize,
+    learning_max_num_nogoods: usize,
 
-    /// The number of mid-lbd learned nogoods that are kept in the database.
+    /// The factor with which the max number of stored nogoods is multiplied
+    /// after each db reduction
     ///
-    /// This is based on the variation of the three-tiered system proposed in
-    /// "Improving Implementation of SAT Competitions 2017–2019 Winners".
-    ///
-    /// Possible values: usize
+    /// Possible values: f32
     #[arg(
-        long = "learning-max-num-mid-lbd-nogoods",
-        default_value_t = 7000,
+        long = "learning-max-num-nogoods-bump",
+        default_value_t = 1.1,
         verbatim_doc_comment
     )]
-    learning_max_num_mid_lbd_nogoods: usize,
-
-    /// The number of low-lbd learned nogoods that are kept in the database.
-    ///
-    /// This is based on the variation of the three-tiered system proposed in
-    /// "Improving Implementation of SAT Competitions 2017–2019 Winners".
-    ///
-    /// Possible values: usize
-    #[arg(
-        long = "learning-max-num-low-lbd-nogoods",
-        default_value_t = 100_000,
-        verbatim_doc_comment
-    )]
-    learning_max_num_low_lbd_nogoods: usize,
-
-    /// The treshold determining whether a learned nogood is "low" LBD.
-    ///
-    /// "Low" LBD nogood are kept around for longer since they are of better "quality".
-    ///
-    /// Learned nogoods are kept based on the tiered system introduced "Improving
-    /// SAT Solvers by Exploiting Empirical Characteristics of CDCL - Chanseok Oh (2016)"
-    /// with the variation from "Improving Implementation of SAT Competitions 2017–2019 Winners".
-    ///
-    /// Possible values: u32
-    #[arg(
-        long = "learning-low-lbd-threshold",
-        default_value_t = 3,
-        verbatim_doc_comment
-    )]
-    learning_low_lbd_threshold: u32,
-
-    /// The treshold determining whether a learned nogood is "low" LBD.
-    ///
-    /// "High" LBD nogood are kept around for a shorter amount of time since they are of bad
-    /// "quality".
-    ///
-    /// Learned nogoods are kept based on the tiered system introduced "Improving
-    /// SAT Solvers by Exploiting Empirical Characteristics of CDCL - Chanseok Oh (2016)"
-    /// with the variation from "Improving Implementation of SAT Competitions 2017–2019 Winners".
-    ///
-    /// Possible values: u32
-    #[arg(
-        long = "learning-high-lbd-threshold",
-        default_value_t = 7,
-        verbatim_doc_comment
-    )]
-    learning_high_lbd_threshold: u32,
+    learning_max_num_nogoods_bump: f32,
 
     /// Decides whether learned clauses are minimised as a post-processing step after computing the
     /// 1-UIP Minimisation is done; according to the idea proposed in "Generalized Conflict-Clause
@@ -546,6 +509,12 @@ fn run() -> PumpkinResult<()> {
         ProofLog::default()
     };
 
+    if args.nogood_deletion_method != NogoodDeletionMethod::Single
+        && args.first_nogood_ordering_metric == args.second_nogood_ordering_metric
+    {
+        panic!("Nogood ordering metrics cannot be the same");
+    }
+
     let restart_options = RestartOptions {
         sequence_generator_type: args.restart_sequence_generator_type,
         base_interval: args.restart_base_interval,
@@ -559,12 +528,12 @@ fn run() -> PumpkinResult<()> {
     let learning_options = LearningOptions {
         max_activity: 1e20,
         activity_decay_factor: 0.99,
-        max_num_high_lbd_nogoods: args.learning_max_num_high_lbd_nogoods,
-        max_num_mid_lbd_nogoods: args.learning_max_num_mid_lbd_nogoods,
-        max_num_low_lbd_nogoods: args.learning_max_num_low_lbd_nogoods,
-        lbd_threshold_low: args.learning_low_lbd_threshold,
-        lbd_threshold_high: args.learning_high_lbd_threshold,
+        max_num_nogoods: args.learning_max_num_nogoods,
+        max_num_nogoods_bump: args.learning_max_num_nogoods_bump,
         activity_bump_increment: 1.0,
+        nogood_deletion_method: args.nogood_deletion_method,
+        first_nogood_ordering_metric: args.first_nogood_ordering_metric,
+        second_nogood_ordering_metric: args.second_nogood_ordering_metric,
     };
 
     let should_minimise_nogoods = if args.proof_type == ProofType::Full {

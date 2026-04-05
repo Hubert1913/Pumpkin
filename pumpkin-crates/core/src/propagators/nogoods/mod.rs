@@ -6,7 +6,28 @@ mod nogood_info;
 mod nogood_propagator;
 
 pub use checker::*;
+use clap::ValueEnum;
 pub use learning_options::*;
 pub(crate) use nogood_id::*;
 pub(crate) use nogood_info::*;
 pub(crate) use nogood_propagator::*;
+
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum NogoodDeletionMethod {
+    /// Use only one metric for nogood ordering
+    #[default]
+    Single,
+    /// Use two metrics, keep nogoods that are good according to both metrics
+    DoubleBoth,
+    /// Use two metrcis, keep nogoods that are good according to either of the metrics
+    DoubleEither,
+}
+
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum NogoodOrderingMetric {
+    #[default]
+    LBD,
+    Activity,
+    NumberVariables,
+    ConstraintsCount,
+}

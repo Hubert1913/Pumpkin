@@ -90,8 +90,8 @@ impl ConflictAnalysisContext<'_> {
     /// Returns a nogood which led to the conflict, excluding predicates from the root decision
     /// level.
     pub fn get_conflict_nogood(
-        &mut self, 
-        mut constraint_tags_set: Option<&mut HashSet<ConstraintTag>>
+        &mut self,
+        mut constraint_tags_set: Option<&mut HashSet<ConstraintTag>>,
     ) -> Vec<Predicate> {
         let conflict_nogood = match self.solver_state.get_conflict_info() {
             StoredConflictInfo::Propagator(conflict) => {

@@ -119,8 +119,11 @@ impl ConflictResolver for ResolutionResolver {
             .average_learned_nogood_length
             .add_term(self.processed_nogood_predicates.len() as u64);
 
-        let backtrack_level =
-            context.process_learned_nogood(self.processed_nogood_predicates.clone(), lbd, used_constraint_tags);
+        let backtrack_level = context.process_learned_nogood(
+            self.processed_nogood_predicates.clone(),
+            lbd,
+            used_constraint_tags,
+        );
 
         self.statistics
             .average_backtrack_amount
@@ -151,7 +154,10 @@ impl ResolutionResolver {
         }
     }
 
-    pub(crate) fn learn_nogood(&mut self, context: &mut ConflictAnalysisContext) -> HashSet<ConstraintTag> {
+    pub(crate) fn learn_nogood(
+        &mut self,
+        context: &mut ConflictAnalysisContext,
+    ) -> HashSet<ConstraintTag> {
         self.clean_up();
 
         let mut used_constraint_tags = HashSet::default();

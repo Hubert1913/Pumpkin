@@ -27,7 +27,11 @@ pub(crate) struct NogoodInfo {
 }
 
 impl NogoodInfo {
-    pub(crate) fn new_learned_nogood_info(lbd: u32, num_variables: u32, constraints_count_recursive: u32) -> Self {
+    pub(crate) fn new_learned_nogood_info(
+        lbd: u32,
+        num_variables: u32,
+        constraints_count_recursive: u32,
+    ) -> Self {
         NogoodInfo {
             is_learned: true,
             lbd,
