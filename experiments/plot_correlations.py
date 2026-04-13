@@ -26,7 +26,6 @@ VALUE_COLS = [
     "decision_levels_span", "search_space_size",
     "constraints_count", "constraints_count_recursive"
 ]
-WEIGHT_COLS = ["unweighted", "conflict_weights", "proof_weights", "useful_proof_weights"]   # must match the 'weight' values in your CSVs
 
 PLOT_TITLES  = {
     "unweighted": "Unweighted",
@@ -101,7 +100,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("input_dir", type=str, help="Path to directory containing input .csv files")
     parser.add_argument("output_dir", type=str, help="Path to directory for output figure")
+    parser.add_argument("--sat", type=bool, default=False, help="If the instances were satisfiable (no proof)")
     args = parser.parse_args()
+
+    if not args.sat:
+        weight_cols = ["unweighted", "conflict_weights", "proof_weights", "useful_proof_weights"]
+    else:
+        weight_cols = ["unweighted", "conflict_weights"]
 
     paths = glob.glob(fr"{args.input_dir}/corr_*.csv")
     out_dir = f"{args.output_dir}/"
@@ -114,12 +119,12 @@ def main():
     combined = load_and_combine(paths)
     # print(combined)
 
-    # One figure with 4 subplots (2×2)
-    fig, axes = plt.subplots(2, 2, figsize=(14, 12))
+    # One figure with 4 subplots (2×2) or 2 in sat case
+    fig, axes = plt.subplots(int(len(weight_cols) / 2), 2, figsize=(14, 3 * len(weight_cols)))
     fig.suptitle(f"Correlations between metrics",
                  fontsize=14, fontweight="bold", y=1.01)
 
-    for ax, weight in zip(axes.flat, WEIGHT_COLS):
+    for ax, weight in zip(axes.flat, weight_cols):
         mat = mean_corr_matrix(combined, weight)
         plot_heatmap(ax, mat, PLOT_TITLES[weight])
 

@@ -1,12 +1,10 @@
+import argparse
 import os
 import subprocess
 import threading
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-FLATZINC_DIR = r".\experiments\flatzinc"
-OUTPUT_DIR = r".\experiments\outputs"
-OUT_CSV_DIR = r".\experiments\out_data"
 SOLVER_EXE = r".\target\release\pumpkin-solver.exe"
 # PROCESSOR_EXE = r".\target\release\pumpkin-proof-processor.exe"
 MAIN_SCRIPT = r".\experiments\main.py"
@@ -14,7 +12,8 @@ TIMEOUT_MS = 5400000
 MAX_WORKERS = 5
 
 SEPARATOR = "=" * 10
-DASH_SEPARATOR = "-" * 10
+SAT_SEPARATOR = "-" * 10
+UNSAT_MARKER = "UNSATISFIABLE"
 
 print_lock = threading.Lock()
 skipped_count = 0
@@ -26,13 +25,13 @@ def log(instance: str, message: str) -> None:
         print(f"[{instance}] {message}")
 
 
-def run_instance(fzn_path: Path) -> None:
+def run_instance(fzn_path: Path, output_dir: str, out_csv_dir: str, sat: bool) -> None:
     instance = fzn_path.stem
 
-    proof_full = rf".\experiments\outputs\{instance}_proof_full.drcp"
-    # proof_processed = rf".\experiments\outputs\{instance}_proof_full_processed.drcp"
-    stats_path = rf".\experiments\outputs\{instance}_stats.txt"
-    stdout_log = rf".\experiments\outputs\{instance}_sdout.log"
+    proof_full = rf"{output_dir}\{instance}_proof_full.drcp"
+    # proof_processed = rf"{output_dir}\{instance}_proof_full_processed.drcp"
+    stats_path = rf"{output_dir}\{instance}_stats.txt"
+    stdout_log = rf"{output_dir}\{instance}_sdout.log"
 
     # --- Step 1: Run the solver ---
     solver_cmd = [
@@ -71,6 +70,13 @@ def run_instance(fzn_path: Path) -> None:
 
     # --- Step 2: Check output for separator sequences ---
     should_process = SEPARATOR in stdout_output  # or DASH_SEPARATOR in stdout_output
+    if sat:
+        if SAT_SEPARATOR in stdout_output:
+            sat_type = "sat"
+            should_process = True
+        elif UNSAT_MARKER in stdout_output:
+            sat_type = "unsat"
+            should_process = True
 
     if not should_process:
         log(instance, "No separator found in solver output. Skipping the instance.")
@@ -92,8 +98,8 @@ def run_instance(fzn_path: Path) -> None:
 
     log(instance, f"solveTime = {solve_time}")
 
-    if solve_time < 25.0:
-        log(instance, f"solveTime {solve_time} is below 25. Skipping proof processing.")
+    if solve_time < 20.0:
+        log(instance, f"solveTime {solve_time} is below 20. Skipping proof processing.")
         global skipped_count
         with skipped_lock:
             skipped_count += 1
@@ -129,7 +135,13 @@ def run_instance(fzn_path: Path) -> None:
     #     return
 
     # --- Step 4: Run main.py ---
-    main_cmd = ["python", MAIN_SCRIPT, instance, OUTPUT_DIR, OUT_CSV_DIR]
+    if not sat:
+        main_cmd = ["python", MAIN_SCRIPT, instance, output_dir, out_csv_dir]
+    else:
+        out_csv_dir_sat = out_csv_dir + sat_type + out_csv_dir[-1]
+        os.makedirs(out_csv_dir_sat, exist_ok=True)
+
+        main_cmd = ["python", MAIN_SCRIPT, instance, output_dir, out_csv_dir_sat, "--sat", "true"]
 
     log(instance, f"Running main.py: {' '.join(main_cmd)}")
 
@@ -153,7 +165,14 @@ def run_instance(fzn_path: Path) -> None:
 
 
 def main() -> None:
-    flatzinc_path = Path(FLATZINC_DIR)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("flatzinc_dir", type=str, help="Path to directory containing input .fzn files")
+    parser.add_argument("output_dir", type=str, help="Path to directory for solver output files")
+    parser.add_argument("out_csv_dir", type=str, help="Path to directory for output .csv files")
+    parser.add_argument("--sat", type=bool, default=False, help="If we are looking for SAT separators in stdout")
+    args = parser.parse_args()
+
+    flatzinc_path = Path(args.flatzinc_dir)
 
     if not flatzinc_path.exists():
         print(f"ERROR: FlatZinc directory not found: {flatzinc_path.resolve()}")
@@ -165,13 +184,13 @@ def main() -> None:
         print(f"No .fzn files found in {flatzinc_path.resolve()}")
         return
 
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    os.makedirs(OUT_CSV_DIR, exist_ok=True)
+    os.makedirs(args.output_dir, exist_ok=True)
+    os.makedirs(args.out_csv_dir, exist_ok=True)
 
     print(f"Found {len(fzn_files)} .fzn file(s). Running with {MAX_WORKERS} workers.\n")
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = {executor.submit(run_instance, f): f for f in fzn_files}
+        futures = {executor.submit(run_instance, f, args.output_dir, args.out_csv_dir, args.sat): f for f in fzn_files}
         for future in as_completed(futures):
             fzn = futures[future]
             try:

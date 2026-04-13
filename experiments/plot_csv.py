@@ -12,6 +12,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("input_dir", type=str, help="Path to directory containing input .csv files")
 parser.add_argument("output_dir", type=str, help="Path to directory for output figures")
 parser.add_argument("--print_latex", type=bool, default=False, help="If latex table of statistics should dbe printed")
+parser.add_argument("--sat", type=bool, default=False, help="If the instances were satisfiable (no proof)")
 args = parser.parse_args()
 
 files = glob.glob(fr"{args.input_dir}\data_*.csv")
@@ -48,15 +49,20 @@ metrics_names = [
     "constraints_count", "constraints_count_recursive"
 ]
 
-plot_types = ["unweighted", "conflict", "proof", "useful_proof"]
+if not args.sat:
+    plot_types = ["unweighted", "conflict", "proof", "useful_proof"]
+else:
+    plot_types = ["unweighted", "conflict"]
+
+num_plot_types = len(plot_types)
 
 os.makedirs(args.output_dir, exist_ok=True)
 
 for metric in metrics_names:
     df_m = df_combined[df_combined.metric == metric]
-    plt.figure(figsize=(20, 5))
+    plt.figure(figsize=(5*num_plot_types, 5))
     for i, plot_type in enumerate(plot_types, 1):
-        plt.subplot(1, 4, i)
+        plt.subplot(1, num_plot_types, i)
         df_t = df_m[df_m.type == plot_type]
 
         plt.bar(df_t.bin_center, df_t.density, width=bin_width, color="skyblue", edgecolor="black", linewidth=0.5)
@@ -71,11 +77,11 @@ for metric in metrics_names:
 
 for metric in metrics_names:
     df_m = df_combined_raw[df_combined_raw.metric == metric]
-    plt.figure(figsize=(20, 5))
+    plt.figure(figsize=(5*num_plot_types, 5))
 
     if metric == "search_space_size":
         for i, plot_type in enumerate(plot_types, 1):
-            plt.subplot(1, 4, i)
+            plt.subplot(1, num_plot_types, i)
             df_t = df_m[df_m.type == plot_type]
 
             log_values = np.log10(df_t['value'])
@@ -95,7 +101,7 @@ for metric in metrics_names:
         plt.savefig(f'{args.output_dir}/raw_hist_{metric}.png')
     elif metric == "activity":
         for i, plot_type in enumerate(plot_types, 1):
-            plt.subplot(1, 4, i)
+            plt.subplot(1, num_plot_types, i)
             df_t = df_m[df_m.type == plot_type]
 
             log_values = np.log10(df_t['value'])
@@ -114,7 +120,7 @@ for metric in metrics_names:
         plt.savefig(f'{args.output_dir}/raw_hist_{metric}.png')
     elif metric == "lbd" or metric == "decision_levels_span":
         for i, plot_type in enumerate(plot_types, 1):
-            plt.subplot(1, 4, i)
+            plt.subplot(1, num_plot_types, i)
             df_t = df_m[df_m.type == plot_type]
 
             plt.bar(df_t['value'], df_t['density'], width=0.8, color="skyblue", edgecolor="black", linewidth=0.5)
@@ -129,7 +135,7 @@ for metric in metrics_names:
         plt.savefig(f'{args.output_dir}/raw_hist_{metric}.png')
     elif metric == "constraints_count" or metric == "constraints_count_recursive":
         for i, plot_type in enumerate(plot_types, 1):
-            plt.subplot(1, 4, i)
+            plt.subplot(1, num_plot_types, i)
             df_t = df_m[df_m.type == plot_type]
 
             plt.bar(df_t['value'], df_t['density'], width=1, color="skyblue", edgecolor="black", linewidth=0.5)
@@ -143,7 +149,7 @@ for metric in metrics_names:
         plt.savefig(f'{args.output_dir}/raw_hist_{metric}.png')
     else:
         for i, plot_type in enumerate(plot_types, 1):
-            plt.subplot(1, 4, i)
+            plt.subplot(1, num_plot_types, i)
             df_t = df_m[df_m.type == plot_type]
 
             plt.bar(df_t['value'], df_t['density'], width=1, color="skyblue", edgecolor="black", linewidth=0.5)
