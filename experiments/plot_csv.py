@@ -49,6 +49,8 @@ metrics_names = [
     "constraints_count", "constraints_count_recursive"
 ]
 
+inverse_metrics = {"activity", "search_space_size"}
+
 if not args.sat:
     plot_types = ["unweighted", "conflict", "proof", "useful_proof"]
 else:
@@ -125,8 +127,9 @@ for metric in metrics_names:
 
             plt.bar(df_t['value'], df_t['density'], width=0.8, color="skyblue", edgecolor="black", linewidth=0.5)
             plt.ylabel('Frequency')
-            ax = plt.gca()
-            ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+            plt.xscale('symlog', linthresh=(20 if not args.sat else 30))
+            # ax = plt.gca()
+            # ax.xaxis.set_major_locator(MaxNLocator(integer=True))
 
             plt.title(plot_type)
             plt.grid(axis='y', alpha=0.3)
@@ -140,7 +143,7 @@ for metric in metrics_names:
 
             plt.bar(df_t['value'], df_t['density'], width=1, color="skyblue", edgecolor="black", linewidth=0.5)
             plt.ylabel('Frequency')
-            plt.xscale('symlog', linthresh=80)
+            plt.xscale('symlog', linthresh=(60 if not args.sat else 40))
 
             plt.title(plot_type)
             plt.grid(axis='y', alpha=0.3)
@@ -154,7 +157,7 @@ for metric in metrics_names:
 
             plt.bar(df_t['value'], df_t['density'], width=1, color="skyblue", edgecolor="black", linewidth=0.5)
             plt.ylabel('Frequency')
-            plt.xscale('symlog', linthresh=30)
+            plt.xscale('symlog', linthresh=(30 if not args.sat else 50))
 
             plt.title(plot_type)
             plt.grid(axis='y', alpha=0.3)
@@ -218,7 +221,7 @@ def to_latex(stats: pd.DataFrame, float_fmt: str = "{:.4f}") -> str:
     Render a LaTeX booktabs table grouped by type.
     """
     lines = [
-        r"\begin{table}[ht]",
+        r"\begin{table}[H]",
         r"\centering",
         r"\begin{tabular}{llrrr}",
         r"\toprule",
@@ -231,12 +234,13 @@ def to_latex(stats: pd.DataFrame, float_fmt: str = "{:.4f}") -> str:
         first = True
         for m in metrics_names:
             row = group[group.metric == m].iloc[0]
-            type_cell = t if first else ""
+            type_cell = t.replace("_", "\\_") if first else ""
             first = False
-            mean_s = float_fmt.format(row["mean"])
+            mean_s = float_fmt.format(row["mean"] if m not in inverse_metrics else 1 - row["mean"])
             std_s = float_fmt.format(row["std"])
-            skew_s = float_fmt.format(row["skewness"])
-            lines.append(f"{type_cell} & {row['metric']} & {mean_s} & {std_s} & {skew_s} \\\\")
+            skew_s = float_fmt.format(abs(row["skewness"]))
+            metric_name_sanitized = row['metric'].replace('_', '\\_')
+            lines.append(f"{type_cell} & {metric_name_sanitized} & {mean_s} & {std_s} & {skew_s} \\\\")
         lines.append(r"\midrule")
 
     # Remove the last \midrule and replace with \bottomrule
