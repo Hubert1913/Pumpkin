@@ -509,7 +509,8 @@ fn run() -> PumpkinResult<()> {
         ProofLog::default()
     };
 
-    if args.nogood_deletion_method != NogoodDeletionMethod::Single
+    if (args.nogood_deletion_method == NogoodDeletionMethod::DoubleBoth
+        || args.nogood_deletion_method == NogoodDeletionMethod::DoubleEither)
         && args.first_nogood_ordering_metric == args.second_nogood_ordering_metric
     {
         panic!("Nogood ordering metrics cannot be the same");

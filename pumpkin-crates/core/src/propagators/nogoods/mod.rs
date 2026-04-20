@@ -19,8 +19,12 @@ pub enum NogoodDeletionMethod {
     Single,
     /// Use two metrics, keep nogoods that are good according to both metrics
     DoubleBoth,
-    /// Use two metrcis, keep nogoods that are good according to either of the metrics
+    /// Use two metrics, keep nogoods that are good according to either of the metrics
     DoubleEither,
+    /// Uses all four metrics, keep nogoods that are good according to all of them
+    All,
+    /// Uses all four metrics, keep nogoods that are good according to at least one
+    AllEither,
 }
 
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
