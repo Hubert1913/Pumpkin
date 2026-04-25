@@ -2,6 +2,9 @@ use std::cmp::max;
 use std::ops::Not;
 
 use log::warn;
+use rand::SeedableRng;
+use rand::rngs::SmallRng;
+use rand::seq::SliceRandom;
 
 use super::LearningOptions;
 use super::NogoodId;
@@ -86,6 +89,8 @@ pub struct NogoodPropagator {
     /// that were used to derive it.
     /// It takes into the account that nogoods can be used to derive other nogoods.
     nogood_constraints_map: HashMap<ConstraintTag, Vec<ConstraintTag>>,
+    /// Randomness used for sorting nogoods (if 'random' method chosen)
+    rng: SmallRng,
 }
 
 /// [`PropagatorConstructor`] for constructing a new instance of the [`NogoodPropagator`] with the
@@ -125,6 +130,7 @@ impl PropagatorConstructor for NogoodPropagatorConstructor {
             bumped_nogoods: Default::default(),
             temp_nogood_reason: Default::default(),
             nogood_constraints_map: Default::default(),
+            rng: SmallRng::from_entropy(),
         }
     }
 }
@@ -1134,6 +1140,44 @@ impl NogoodPropagator {
                         self.nogood_info[self.nogood_predicates.get_nogood_index(nogood_id)]
                             .is_deleted = true;
                     }
+                }
+            }
+            super::NogoodDeletionMethod::Random => {
+                self.learned_nogood_ids.shuffle(&mut self.rng);
+
+                // We go over all of the randomly shuffled nogoods
+                for &id in &self.learned_nogood_ids {
+                    if num_nogoods_to_remove == 0 {
+                        // We are done removing nogoods.
+                        break;
+                    }
+
+                    // Skip nogoods which are propagating at a non-root level.
+                    if NogoodPropagator::is_nogood_propagating(
+                        self.handle,
+                        &self.nogood_predicates[id],
+                        assignments,
+                        reason_store,
+                        id,
+                        notification_engine,
+                    ) && assignments
+                        .get_checkpoint_for_predicate(
+                            &!notification_engine.get_predicate(self.nogood_predicates[id][0]),
+                        )
+                        .expect("A propagating predicate must have a decision level.")
+                        > 0
+                    {
+                        continue;
+                    }
+
+                    // We can now delete the nogood.
+                    //
+                    // It will be kept in the database for now but it will not be used for
+                    // propagation since its watchers will be removed in the next step.
+                    self.nogood_info[self.nogood_predicates.get_nogood_index(&id)].is_deleted =
+                        true;
+
+                    num_nogoods_to_remove -= 1;
                 }
             }
         }

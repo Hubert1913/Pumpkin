@@ -25,6 +25,8 @@ pub enum NogoodDeletionMethod {
     All,
     /// Uses all four metrics, keep nogoods that are good according to at least one
     AllEither,
+    /// Removes nogoods randomly (only the ones which aren't currently propagating)
+    Random,
 }
 
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
