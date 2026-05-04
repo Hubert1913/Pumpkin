@@ -1180,6 +1180,109 @@ impl NogoodPropagator {
                     num_nogoods_to_remove -= 1;
                 }
             }
+            super::NogoodDeletionMethod::Opposite => {
+                // Get two lists of nogoods, sorted according to corresponding metrics
+                NogoodPropagator::sort_nogoods_by_metric(
+                    &mut self.learned_nogood_ids,
+                    &self.nogood_info,
+                    &self.nogood_predicates,
+                    NogoodOrderingMetric::LBD,
+                );
+                let mut second_sorted = self.learned_nogood_ids.clone();
+                NogoodPropagator::sort_nogoods_by_metric(
+                    &mut second_sorted,
+                    &self.nogood_info,
+                    &self.nogood_predicates,
+                    NogoodOrderingMetric::Activity,
+                );
+
+                let mut first_metric_index = 0;
+                let mut second_metric_index = 0;
+
+                let num_all_nogoods = self.learned_nogood_ids.len() as i32;
+
+                while num_nogoods_to_remove > 0 {
+                    if first_metric_index >= num_all_nogoods
+                        && second_metric_index >= num_all_nogoods
+                    {
+                        break;
+                    }
+
+                    // First we find the best nogood according to LBD
+
+                    // Skip nogoods which are propagating at a non-root level,
+                    // or those that were already marked for deletion
+                    while first_metric_index < num_all_nogoods
+                        && ((NogoodPropagator::is_nogood_propagating(
+                            self.handle,
+                            &self.nogood_predicates
+                                [self.learned_nogood_ids[first_metric_index as usize]],
+                            assignments,
+                            reason_store,
+                            self.learned_nogood_ids[first_metric_index as usize],
+                            notification_engine,
+                        ) && assignments
+                            .get_checkpoint_for_predicate(&!notification_engine.get_predicate(
+                                self.nogood_predicates
+                                    [self.learned_nogood_ids[first_metric_index as usize]][0],
+                            ))
+                            .expect("A propagating predicate must have a decision level.")
+                            > 0)
+                            || self.nogood_info[self.nogood_predicates.get_nogood_index(
+                                &self.learned_nogood_ids[first_metric_index as usize],
+                            )]
+                            .is_deleted)
+                    {
+                        first_metric_index += 1;
+                    }
+
+                    if first_metric_index < num_all_nogoods {
+                        // We found a nogood to delete from LBD
+                        self.nogood_info[self.nogood_predicates.get_nogood_index(
+                            &self.learned_nogood_ids[first_metric_index as usize],
+                        )]
+                        .is_deleted = true;
+                        num_nogoods_to_remove -= 1;
+                        first_metric_index += 1;
+                    }
+
+                    // And now the same for Activity
+                    // Skip nogoods which are propagating at a non-root level,
+                    // or those that were already marked for deletion
+                    while second_metric_index < num_all_nogoods
+                        && ((NogoodPropagator::is_nogood_propagating(
+                            self.handle,
+                            &self.nogood_predicates[second_sorted[second_metric_index as usize]],
+                            assignments,
+                            reason_store,
+                            second_sorted[second_metric_index as usize],
+                            notification_engine,
+                        ) && assignments
+                            .get_checkpoint_for_predicate(&!notification_engine.get_predicate(
+                                self.nogood_predicates[second_sorted[second_metric_index as usize]]
+                                    [0],
+                            ))
+                            .expect("A propagating predicate must have a decision level.")
+                            > 0)
+                            || self.nogood_info[self
+                                .nogood_predicates
+                                .get_nogood_index(&second_sorted[second_metric_index as usize])]
+                            .is_deleted)
+                    {
+                        second_metric_index += 1;
+                    }
+
+                    if second_metric_index < num_all_nogoods {
+                        // We found a nogood to delete from Activity
+                        self.nogood_info[self
+                            .nogood_predicates
+                            .get_nogood_index(&second_sorted[second_metric_index as usize])]
+                        .is_deleted = true;
+                        num_nogoods_to_remove -= 1;
+                        second_metric_index += 1;
+                    }
+                }
+            }
         }
 
         // We remove the nogood from the provided `nogood_ids`.

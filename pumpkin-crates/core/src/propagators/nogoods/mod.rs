@@ -27,6 +27,9 @@ pub enum NogoodDeletionMethod {
     AllEither,
     /// Removes nogoods randomly (only the ones which aren't currently propagating)
     Random,
+    /// Behaves in an opposite way to the best found scheme (either_lbd_activity)
+    /// Thus it removes the nogoods with either highest LBD or highest activity
+    Opposite,
 }
 
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
