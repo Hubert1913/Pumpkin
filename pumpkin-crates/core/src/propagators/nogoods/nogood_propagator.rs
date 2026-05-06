@@ -1142,6 +1142,93 @@ impl NogoodPropagator {
                     }
                 }
             }
+            super::NogoodDeletionMethod::AllEitherExceptCc => {
+                // Get four lists of nogoods, sorted according to all the metrics metrics
+                let mut sorted_nogoods = [
+                    self.learned_nogood_ids.clone(),
+                    self.learned_nogood_ids.clone(),
+                    self.learned_nogood_ids.clone(),
+                ];
+                NogoodPropagator::sort_nogoods_by_metric(
+                    &mut sorted_nogoods[0],
+                    &self.nogood_info,
+                    &self.nogood_predicates,
+                    NogoodOrderingMetric::LBD,
+                );
+                NogoodPropagator::sort_nogoods_by_metric(
+                    &mut sorted_nogoods[1],
+                    &self.nogood_info,
+                    &self.nogood_predicates,
+                    NogoodOrderingMetric::Activity,
+                );
+                NogoodPropagator::sort_nogoods_by_metric(
+                    &mut sorted_nogoods[2],
+                    &self.nogood_info,
+                    &self.nogood_predicates,
+                    NogoodOrderingMetric::NumberVariables,
+                );
+
+                let mut indices = [0; 3];
+
+                let num_nogoods_to_keep =
+                    self.learned_nogood_ids.len() - num_nogoods_to_remove as usize;
+
+                let mut nogoods_to_keep: HashSet<NogoodId> = HashSet::default();
+
+                // Keep all nogoods that are propagating at a non-root level.
+                for &nogood_id in &self.learned_nogood_ids {
+                    if NogoodPropagator::is_nogood_propagating(
+                        self.handle,
+                        &self.nogood_predicates[nogood_id],
+                        assignments,
+                        reason_store,
+                        nogood_id,
+                        notification_engine,
+                    ) && assignments
+                        .get_checkpoint_for_predicate(
+                            &!notification_engine
+                                .get_predicate(self.nogood_predicates[nogood_id][0]),
+                        )
+                        .expect("A propagating predicate must have a decision level.")
+                        > 0
+                    {
+                        let _ = nogoods_to_keep.insert(nogood_id);
+                    }
+                }
+
+                let num_all_nogoods = self.learned_nogood_ids.len() as i32;
+
+                while nogoods_to_keep.len() < num_nogoods_to_keep {
+                    // We will always eventually leave this loop, so no specific break
+                    // condition needed
+
+                    // We go through the metrics, and try to find a nogood to keep
+                    for metric_idx in 0..3 {
+                        // Skip all nogoods that are already retained
+                        while indices[metric_idx] < num_all_nogoods
+                            && nogoods_to_keep
+                                .contains(&sorted_nogoods[metric_idx][indices[metric_idx] as usize])
+                        {
+                            indices[metric_idx] += 1;
+                        }
+
+                        if indices[metric_idx] < num_all_nogoods {
+                            // Found a nogood to keep from the given metric
+                            let _ = nogoods_to_keep
+                                .insert(sorted_nogoods[metric_idx][indices[metric_idx] as usize]);
+                            indices[metric_idx] += 1;
+                        }
+                    }
+                }
+
+                // We found the nogoods to keep -> mark the other ones as to delete
+                for nogood_id in &self.learned_nogood_ids {
+                    if !nogoods_to_keep.contains(nogood_id) {
+                        self.nogood_info[self.nogood_predicates.get_nogood_index(nogood_id)]
+                            .is_deleted = true;
+                    }
+                }
+            }
             super::NogoodDeletionMethod::Random => {
                 self.learned_nogood_ids.shuffle(&mut self.rng);
 

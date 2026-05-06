@@ -25,6 +25,8 @@ pub enum NogoodDeletionMethod {
     All,
     /// Uses all four metrics, keep nogoods that are good according to at least one
     AllEither,
+    /// Uses three metrics (all but constraints count), keep nogoods that are good according to at least one
+    AllEitherExceptCc,
     /// Removes nogoods randomly (only the ones which aren't currently propagating)
     Random,
     /// Behaves in an opposite way to the best found scheme (either_lbd_activity)
