@@ -13,6 +13,8 @@ pub struct LearningOptions {
     pub max_num_nogoods: usize,
     /// The percentage by which we increase maximal number of nogoods after each database reduction
     pub max_num_nogoods_bump: f32,
+    /// The upper limit for nogoods db size, if bumping was to make it bigger, we clip it
+    pub upper_limit_nogoods: usize,
     /// Specifies by how much the activity is increased when a nogood is bumped.
     pub activity_bump_increment: f32,
     pub nogood_deletion_method: NogoodDeletionMethod,
@@ -26,6 +28,7 @@ impl Default for LearningOptions {
             activity_decay_factor: 0.99,
             max_num_nogoods: 40000,
             max_num_nogoods_bump: 1.1,
+            upper_limit_nogoods: 1_000_000_000,
             activity_bump_increment: 1.0,
             nogood_deletion_method: NogoodDeletionMethod::Single,
             first_nogood_ordering_metric: NogoodOrderingMetric::LBD,

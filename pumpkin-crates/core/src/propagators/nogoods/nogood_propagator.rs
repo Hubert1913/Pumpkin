@@ -1389,6 +1389,9 @@ impl NogoodPropagator {
         self.parameters.max_num_nogoods = (self.parameters.max_num_nogoods as f32
             * self.parameters.max_num_nogoods_bump)
             .round() as usize;
+        if self.parameters.max_num_nogoods > self.parameters.upper_limit_nogoods {
+            self.parameters.max_num_nogoods = self.parameters.upper_limit_nogoods;
+        }
     }
 
     fn has_a_watched_predicate_falsified_at_root_level(

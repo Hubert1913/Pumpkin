@@ -124,6 +124,16 @@ struct Args {
     )]
     learning_max_num_nogoods_bump: f32,
 
+    /// The upper limit for the number of learned nogoods that can be kept in the database
+    ///
+    /// Possible values: usize
+    #[arg(
+        long = "learning-upper-limit-nogoods",
+        default_value_t = 1_000_000_000,
+        verbatim_doc_comment
+    )]
+    learning_upper_limit_nogoods: usize,
+
     /// Decides whether learned clauses are minimised as a post-processing step after computing the
     /// 1-UIP Minimisation is done; according to the idea proposed in "Generalized Conflict-Clause
     /// Strengthening for Satisfiability Solvers - Allen van Gelder (2011)".
@@ -531,6 +541,7 @@ fn run() -> PumpkinResult<()> {
         activity_decay_factor: 0.99,
         max_num_nogoods: args.learning_max_num_nogoods,
         max_num_nogoods_bump: args.learning_max_num_nogoods_bump,
+        upper_limit_nogoods: args.learning_upper_limit_nogoods,
         activity_bump_increment: 1.0,
         nogood_deletion_method: args.nogood_deletion_method,
         first_nogood_ordering_metric: args.first_nogood_ordering_metric,
