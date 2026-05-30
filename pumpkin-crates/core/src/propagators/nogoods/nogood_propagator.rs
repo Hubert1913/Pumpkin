@@ -17,6 +17,7 @@ use crate::containers::HashMap;
 use crate::containers::HashSet;
 use crate::containers::KeyedVec;
 use crate::containers::StorageKey;
+use crate::create_statistics_struct;
 use crate::engine::Assignments;
 use crate::engine::Lbd;
 use crate::engine::notifications::NotificationEngine;
@@ -45,6 +46,10 @@ use crate::pumpkin_assert_moderate;
 use crate::pumpkin_assert_simple;
 use crate::state::Conflict;
 use crate::state::PropagatorHandle;
+use crate::statistics::StatisticLogger;
+use crate::statistics::log_statistic;
+use crate::statistics::moving_averages::CumulativeMovingAverage;
+use crate::statistics::moving_averages::MovingAverage;
 
 /// A propagator which propagates nogoods (i.e. a list of [`Predicate`]s which cannot all be true
 /// at the same time).
@@ -91,7 +96,28 @@ pub struct NogoodPropagator {
     nogood_constraints_map: HashMap<ConstraintTag, Vec<ConstraintTag>>,
     /// Randomness used for sorting nogoods (if 'random' method chosen)
     rng: SmallRng,
+    statistics: NogoodPropagationStatistics,
 }
+
+create_statistics_struct!(
+    /// The statistics related to nogoods
+    NogoodPropagationStatistics {
+        average_single_original_prop_nogoods_left: CumulativeMovingAverage<f32>,
+        average_no_new_prop_nogoods_left: CumulativeMovingAverage<f32>,
+
+        average_single_original_prop_nogoods_removed: CumulativeMovingAverage<f32>,
+        average_no_new_prop_nogoods_removed: CumulativeMovingAverage<f32>,
+
+        average_original_prop_ratio_retained: CumulativeMovingAverage<f32>,
+        average_new_prop_ratio_retained: CumulativeMovingAverage<f32>,
+
+        average_age_removed: CumulativeMovingAverage<f32>,
+        average_age_left: CumulativeMovingAverage<f32>,
+        num_nogoods_one_propagation: u64,
+
+        nogood_propagations: u64,
+        reductions: u32,
+});
 
 /// [`PropagatorConstructor`] for constructing a new instance of the [`NogoodPropagator`] with the
 /// provided [`LearningOptions`] and `capacity`.
@@ -131,6 +157,7 @@ impl PropagatorConstructor for NogoodPropagatorConstructor {
             temp_nogood_reason: Default::default(),
             nogood_constraints_map: Default::default(),
             rng: SmallRng::from_entropy(),
+            statistics: Default::default(),
         }
     }
 }
@@ -249,6 +276,8 @@ impl Propagator for NogoodPropagator {
                     continue;
                 }
 
+                let nogood_index = self.nogood_predicates.get_nogood_index(&watcher.nogood_id);
+
                 let nogood_predicates = &mut self.nogood_predicates[watcher.nogood_id];
 
                 // Place the watched predicate at position 1 for simplicity.
@@ -314,6 +343,13 @@ impl Propagator for NogoodPropagator {
                 // nogood[0] is unassigned -> propagate the predicate to false
                 // nogood[0] is assigned true -> conflict.
                 let reason = Reason::DynamicLazy(watcher.nogood_id.id as u64);
+                self.nogood_info[nogood_index].propagations_since_creation += 1;
+                self.nogood_info[nogood_index].propagations_since_reduction += 1;
+                self.statistics.nogood_propagations += 1;
+
+                if self.nogood_info[nogood_index].propagations_since_creation == 2 {
+                    self.statistics.num_nogoods_one_propagation -= 1;
+                }
 
                 let predicate = !context.get_predicate(nogood_predicates[0]);
                 let result = context.post(
@@ -474,6 +510,7 @@ impl NogoodPropagator {
             num_variables,
             processed_cons_tags_len,
         ));
+        self.statistics.num_nogoods_one_propagation += 1;
         let _ = self.inference_codes.push(inference_code);
 
         let watcher = Watcher {
@@ -720,6 +757,17 @@ impl NogoodPropagator {
         // Check if we exceed the allowed limit of stored nogoods
         if self.learned_nogood_ids.len() <= self.parameters.max_num_nogoods {
             return;
+        }
+
+        let mut total_original_propagations_before_reduction = 0;
+        let mut total_new_propagations_before_reduction = 0;
+
+        for nogood in &self.learned_nogood_ids {
+            let nogood_index = self.nogood_predicates.get_nogood_index(nogood);
+            total_original_propagations_before_reduction +=
+                self.nogood_info[nogood_index].propagations_since_creation;
+            total_new_propagations_before_reduction +=
+                self.nogood_info[nogood_index].propagations_since_reduction;
         }
 
         // First we calculate how many nogoods to remove (at least one)
@@ -1372,6 +1420,104 @@ impl NogoodPropagator {
             }
         }
 
+        let mut total_original_propagations_after_reduction = 0;
+        let mut total_new_propagations_after_reduction = 0;
+
+        let mut count_single_original_propagation_retained = 0;
+        let mut count_single_original_propagation_deleted = 0;
+
+        let mut count_no_new_propagation_retained = 0;
+        let mut count_no_new_propagation_deleted = 0;
+
+        let mut total_age_removed = 0;
+        let mut total_age_retained = 0;
+
+        let num_all_nogoods = self.learned_nogood_ids.len();
+        let mut num_nogoods_deleted = 0;
+        for nogood in &self.learned_nogood_ids {
+            let nogood_info =
+                &mut self.nogood_info[self.nogood_predicates.get_nogood_index(nogood)];
+            if nogood_info.is_deleted {
+                num_nogoods_deleted += 1;
+                total_age_removed += nogood_info.survived_reductions;
+
+                if nogood_info.propagations_since_creation == 1 {
+                    count_single_original_propagation_deleted += 1;
+                }
+                if nogood_info.propagations_since_reduction == 0 {
+                    count_no_new_propagation_deleted += 1;
+                }
+            } else {
+                total_age_retained += nogood_info.survived_reductions;
+                total_original_propagations_after_reduction +=
+                    nogood_info.propagations_since_creation;
+                total_new_propagations_after_reduction += nogood_info.propagations_since_reduction;
+
+                if nogood_info.propagations_since_creation == 1 {
+                    count_single_original_propagation_retained += 1;
+                }
+                if nogood_info.propagations_since_reduction == 0 {
+                    count_no_new_propagation_retained += 1;
+                }
+            }
+
+            if !nogood_info.is_deleted {
+                nogood_info.propagations_since_reduction = 0;
+                nogood_info.survived_reductions += 1;
+            }
+        }
+
+        let num_nogoods_retained = num_all_nogoods - num_nogoods_deleted;
+
+        self.statistics
+            .average_single_original_prop_nogoods_left
+            .add_term(
+                count_single_original_propagation_retained as f32 / num_nogoods_retained as f32,
+            );
+        self.statistics
+            .average_no_new_prop_nogoods_left
+            .add_term(count_no_new_propagation_retained as f32 / num_nogoods_retained as f32);
+        if count_single_original_propagation_deleted != 0
+            || count_single_original_propagation_retained != 0
+        {
+            self.statistics
+                .average_single_original_prop_nogoods_removed
+                .add_term(
+                    count_single_original_propagation_deleted as f32
+                        / (count_single_original_propagation_deleted
+                            + count_single_original_propagation_retained)
+                            as f32,
+                );
+        }
+        if count_no_new_propagation_deleted != 0 || count_no_new_propagation_retained != 0 {
+            self.statistics
+                .average_no_new_prop_nogoods_removed
+                .add_term(
+                    count_no_new_propagation_deleted as f32
+                        / (count_no_new_propagation_deleted + count_no_new_propagation_retained)
+                            as f32,
+                );
+        }
+        self.statistics
+            .average_original_prop_ratio_retained
+            .add_term(
+                total_original_propagations_after_reduction as f32
+                    / total_original_propagations_before_reduction as f32,
+            );
+        self.statistics.average_new_prop_ratio_retained.add_term(
+            total_new_propagations_after_reduction as f32
+                / total_new_propagations_before_reduction as f32,
+        );
+
+        self.statistics
+            .average_age_removed
+            .add_term(total_age_removed as f32 / num_nogoods_deleted as f32);
+        self.statistics
+            .average_age_left
+            .add_term(total_age_retained as f32 / num_nogoods_retained as f32);
+
+        self.statistics.reductions += 1;
+
         // We remove the nogood from the provided `nogood_ids`.
         //
         // Note that this does not remove it from either the nogood database or the watchers!
@@ -1726,6 +1872,46 @@ impl NogoodPropagator {
             );
         }
         true
+    }
+}
+
+impl NogoodPropagator {
+    pub fn log_statistics(&self, _statistic_logger: StatisticLogger) {
+        log_statistic(
+            "averageSinglePropNogoodsLeft",
+            self.statistics.average_single_original_prop_nogoods_left,
+        );
+        log_statistic(
+            "averageNoNewPropNogoodsLeft",
+            self.statistics.average_no_new_prop_nogoods_left,
+        );
+        log_statistic(
+            "averageSinglePropNogoodsRemoved",
+            self.statistics.average_single_original_prop_nogoods_removed,
+        );
+        log_statistic(
+            "averageNoNewPropNogoodsRemoved",
+            self.statistics.average_no_new_prop_nogoods_removed,
+        );
+
+        log_statistic(
+            "averageTotalPropLeft",
+            self.statistics.average_original_prop_ratio_retained,
+        );
+        log_statistic(
+            "averageNewPropLeft",
+            self.statistics.average_new_prop_ratio_retained,
+        );
+
+        log_statistic("averageAgeLeft", self.statistics.average_age_left);
+        log_statistic("averageAgeRemoved", self.statistics.average_age_removed);
+        log_statistic(
+            "nogoodsSingleProp",
+            self.statistics.num_nogoods_one_propagation,
+        );
+
+        log_statistic("nogoodPropagations", self.statistics.nogood_propagations);
+        log_statistic("reductions", self.statistics.reductions);
     }
 }
 

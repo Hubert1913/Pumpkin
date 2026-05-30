@@ -24,6 +24,9 @@ pub(crate) struct NogoodInfo {
     pub(crate) block_bumps: bool,
     /// The activity score of the nogood.
     pub(crate) activity: f32,
+    pub(crate) propagations_since_creation: u32,
+    pub(crate) propagations_since_reduction: u32,
+    pub(crate) survived_reductions: u32,
 }
 
 impl NogoodInfo {
@@ -40,6 +43,9 @@ impl NogoodInfo {
             is_deleted: false,
             block_bumps: false,
             activity: 0.0,
+            propagations_since_creation: 1,
+            propagations_since_reduction: 1,
+            survived_reductions: 0,
         }
     }
 
@@ -52,6 +58,9 @@ impl NogoodInfo {
             is_deleted: false,
             block_bumps: false,
             activity: 0.0,
+            propagations_since_creation: 1,
+            propagations_since_reduction: 1,
+            survived_reductions: 0,
         }
     }
 }

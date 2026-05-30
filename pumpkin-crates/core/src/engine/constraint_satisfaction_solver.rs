@@ -318,6 +318,9 @@ impl ConstraintSatisfactionSolver {
         self.solver_statistics
             .log(StatisticLogger::default(), verbose);
         self.state.log_statistics(verbose);
+        if let Some(nogood_prop) = self.state.get_propagator(self.nogood_propagator_handle) {
+            nogood_prop.log_statistics(StatisticLogger::default());
+        }
     }
 
     /// Create a new [`ConstraintTag`].
